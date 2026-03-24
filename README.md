@@ -12,7 +12,7 @@ directly inside your workflows — ideal for storyboards, character sheets, data
 ```bash
 # From ComfyUI's custom_nodes folder
 cd ComfyUI/custom_nodes
-git clone <repo-url> comfyui-data-manager
+git clone https://github.com/florestefano1975/ComfyUI-Data-Manager
 # or copy the folder manually
 ```
 
