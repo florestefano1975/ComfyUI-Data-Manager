@@ -3,6 +3,8 @@
 A custom node pack for ComfyUI that adds an **interactive Excel-like grid**
 directly inside your workflows — ideal for storyboards, character sheets, dataset builders and more.
 
+![Preview of main node](assets/main-node-preview.png)
+
 ---
 
 ## 📦 Installation
