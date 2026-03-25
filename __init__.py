@@ -17,6 +17,7 @@ from .nodes.column_extractor import (
     ExtractIntNode,
     ExtractFloatNode,
     ExtractImagePathNode,
+    ExtractAudioPathNode,
 )
 from .nodes.row_iterator import RowIteratorNode
 
@@ -28,10 +29,13 @@ try:
     from aiohttp import web
 
     async def _list_input_images(request):
-        """Returns the list of image files in the ComfyUI input folder."""
-        IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
+        """Returns image and audio files from the ComfyUI input folder."""
+        SUPPORTED_EXTS = {
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif",
+            ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus", ".weba",
+        }
         try:
-            import folder_paths  # modulo interno di ComfyUI
+            import folder_paths  # ComfyUI internal module
             input_dir = Path(folder_paths.get_input_directory())
         except ImportError:
             this_dir  = Path(__file__).parent
@@ -40,14 +44,71 @@ try:
         results = []
         if input_dir.exists():
             for f in sorted(input_dir.rglob("*")):
-                if f.suffix.lower() in IMAGE_EXTS and f.is_file():
+                if f.suffix.lower() in SUPPORTED_EXTS and f.is_file():
                     rel = f.relative_to(input_dir)
                     results.append(str(rel).replace("\\", "/"))
 
         return web.json_response(results)
 
+    async def _list_audio_files(request):
+        """Returns only audio files from the ComfyUI input folder."""
+        AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus", ".weba"}
+        try:
+            import folder_paths
+            input_dir = Path(folder_paths.get_input_directory())
+        except ImportError:
+            this_dir  = Path(__file__).parent
+            input_dir = this_dir.parent.parent / "input"
+
+        results = []
+        if input_dir.exists():
+            for f in sorted(input_dir.rglob("*")):
+                if f.suffix.lower() in AUDIO_EXTS and f.is_file():
+                    rel = f.relative_to(input_dir)
+                    results.append(str(rel).replace("\\", "/"))
+        return web.json_response(results)
+
+    async def _audio_duration(request):
+        """Returns the duration in seconds for an audio file in the input folder.
+        Query params: filename, subfolder (optional)
+        Response: { "duration": 42.3 } or { "duration": null } on error.
+        """
+        filename  = request.rel_url.query.get("filename", "")
+        subfolder = request.rel_url.query.get("subfolder", "")
+        if not filename:
+            return web.json_response({"duration": None})
+        try:
+            import folder_paths
+            input_dir = Path(folder_paths.get_input_directory())
+        except ImportError:
+            input_dir = Path(__file__).parent.parent.parent / "input"
+        full = input_dir / subfolder / filename if subfolder else input_dir / filename
+        if not full.is_file():
+            return web.json_response({"duration": None})
+        # Try mutagen first (lightweight, no decode needed)
+        try:
+            from mutagen import File as MutagenFile
+            audio = MutagenFile(str(full))
+            if audio is not None and audio.info is not None:
+                return web.json_response({"duration": float(audio.info.length)})
+        except Exception:
+            pass
+        # Fallback: wave module for WAV files
+        try:
+            import wave
+            with wave.open(str(full)) as wf:
+                dur = wf.getnframes() / wf.getframerate()
+                return web.json_response({"duration": dur})
+        except Exception:
+            pass
+        return web.json_response({"duration": None})
+
     from server import PromptServer
-    PromptServer.instance.app.router.add_get("/dm/list_inputs", _list_input_images)
+    # api.fetchApi("/dm/...") in the browser sends GET /api/dm/...
+    # so we register on /api/dm/... in the aiohttp router.
+    PromptServer.instance.app.router.add_get("/api/dm/list_inputs", _list_input_images)
+    PromptServer.instance.app.router.add_get("/api/dm/list_audio",  _list_audio_files)
+    PromptServer.instance.app.router.add_get("/api/dm/duration",    _audio_duration)
 
 except Exception as _e:
     print(f"[DataManager] WARNING: could not register route /dm/list_inputs: {_e}")
@@ -60,6 +121,7 @@ NODE_CLASS_MAPPINGS = {
     "ExtractIntNode":       ExtractIntNode,
     "ExtractFloatNode":     ExtractFloatNode,
     "ExtractImagePathNode": ExtractImagePathNode,
+    "ExtractAudioPathNode": ExtractAudioPathNode,
     "RowIteratorNode":      RowIteratorNode,
 }
 
@@ -71,6 +133,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ExtractIntNode":       "🔢 Extract Int",
     "ExtractFloatNode":     "🔣 Extract Float",
     "ExtractImagePathNode": "🖼️ Extract Image Path",
+    "ExtractAudioPathNode": "🎵 Extract Audio",
     "RowIteratorNode":      "🔄 Row Iterator",
 }
 

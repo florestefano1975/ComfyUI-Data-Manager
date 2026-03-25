@@ -11,12 +11,13 @@ import { api } from "../../scripts/api.js";
 // Costanti
 // ─────────────────────────────────────────────────────────────────────────────
 
-const COLUMN_TYPES = ["string", "int", "float", "image"];
+const COLUMN_TYPES = ["string", "int", "float", "image", "audio"];
 const TYPE_COLORS  = {
   string : "#4a9eff",
   int    : "#ff9f4a",
   float  : "#4aff9f",
   image  : "#c44aff",
+  audio  : "#ff4a7a",
 };
 const ROW_H     = 52;   // altezza riga — abbastanza per thumbnail
 const HEADER_H  = 32;
@@ -71,6 +72,134 @@ function imageViewUrl(imgVal) {
   return `/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder ?? "")}&type=${v.type ?? "input"}`;
 }
 
+// Audio file extensions
+const AUDIO_EXTS = new Set(["mp3","wav","ogg","flac","m4a","aac","opus","weba"]);
+
+// Same normalizer works for audio (same {filename,subfolder,type} format)
+const normalizeAudioValue = normalizeImageValue;
+
+// URL to stream an audio file through the ComfyUI server
+function audioViewUrl(audioVal) {
+  const v = normalizeAudioValue(audioVal);
+  if (!v) return null;
+  return `/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder ?? "")}&type=${v.type ?? "input"}`;
+}
+
+// ── Audio state: one shared Audio object so only one file plays at a time ─────
+let _activeAudio   = null;  // current HTMLAudioElement
+let _activeUrl     = null;  // url of currently playing file
+let _dirtyCallback = null;  // function to call for canvas redraw
+
+function audioIsPlaying(url) { return _activeUrl === url && _activeAudio && !_activeAudio.paused; }
+
+function audioToggle(url, onStateChange) {
+  if (_activeUrl === url && _activeAudio) {
+    if (_activeAudio.paused) { _activeAudio.play(); }
+    else                     { _activeAudio.pause(); }
+    onStateChange();
+    return;
+  }
+  // Stop previous
+  if (_activeAudio) { _activeAudio.pause(); _activeAudio = null; }
+  _activeUrl   = url;
+  _activeAudio = new Audio(url);
+  _activeAudio.onended  = () => { _activeUrl = null; onStateChange(); };
+  _activeAudio.onpause  = () => onStateChange();
+  _activeAudio.onplay   = () => onStateChange();
+  _activeAudio.onerror  = () => { _activeUrl = null; onStateChange(); };
+  _activeAudio.play().catch(() => {});
+  onStateChange();
+}
+
+// Duration cache: url → "0:42" | "loading" | "error"
+const _durationCache   = {};   // url → "M:SS" | "--:--"
+const _durationPending = {};   // url → [callback, ...] waiting for load
+
+function loadAudioDuration(url, onReady) {
+  // Already resolved: call back immediately
+  if (_durationCache[url] !== undefined) { onReady(); return; }
+
+  // Already loading: queue this callback and wait
+  if (_durationPending[url]) { _durationPending[url].push(onReady); return; }
+
+  // First request: load only metadata via a hidden Audio element
+  _durationPending[url] = [onReady];
+
+  function _flush(val) {
+    _durationCache[url] = val;
+    const cbs = _durationPending[url] ?? [];
+    delete _durationPending[url];
+    cbs.forEach(cb => cb());
+  }
+
+  const a = new Audio();
+  a.preload = "metadata";
+
+  a.onloadedmetadata = () => {
+    const secs = a.duration;
+    if (isFinite(secs) && !isNaN(secs) && secs > 0) {
+      const m  = Math.floor(secs / 60);
+      const ss = String(Math.round(secs % 60)).padStart(2, "0");
+      _flush(`${m}:${ss}`);
+    } else {
+      // duration not yet available — wait for durationchange
+    }
+  };
+
+  // durationchange fires after the real duration is decoded,
+  // useful when onloadedmetadata fires with duration=NaN or 0
+  a.ondurationchange = () => {
+    const secs = a.duration;
+    if (isFinite(secs) && !isNaN(secs) && secs > 0 && !_durationCache[url]) {
+      const m  = Math.floor(secs / 60);
+      const ss = String(Math.round(secs % 60)).padStart(2, "0");
+      _flush(`${m}:${ss}`);
+    }
+  };
+
+  a.onerror = (e) => {
+    console.warn("[DataManager] browser duration load failed for", url, "— trying server fallback");
+    _fetchDurationFromServer(url, _flush);
+  };
+
+  // Set src last, then call load() explicitly to trigger metadata fetch
+  a.src = url;
+  a.load();
+
+  // Safety timeout: if browser doesn't fire any event in 4s, try server
+  setTimeout(() => {
+    if (_durationPending[url]) {
+      console.warn("[DataManager] duration timeout for", url, "— trying server fallback");
+      _fetchDurationFromServer(url, _flush);
+    }
+  }, 4000);
+}
+
+// Fetch duration from the Python backend (uses mutagen, no browser decode needed)
+async function _fetchDurationFromServer(url, onDone) {
+  if (!onDone) return;  // already resolved
+  try {
+    // Extract filename and subfolder from the /view?filename=...&subfolder=... URL
+    const u        = new URL(url, location.origin);
+    const filename = u.searchParams.get("filename") ?? "";
+    const subfolder= u.searchParams.get("subfolder") ?? "";
+    const resp     = await api.fetchApi(`/dm/duration?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.duration !== null && isFinite(data.duration)) {
+        const secs = Math.round(data.duration);
+        const m    = Math.floor(secs / 60);
+        const ss   = String(secs % 60).padStart(2, "0");
+        onDone(`${m}:${ss}`);
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("[DataManager] server duration fallback failed:", e);
+  }
+  onDone("--:--");
+}
+
 async function fetchInputImages() {
   // Tentativo 1: nostro endpoint dedicato /dm/list_inputs (registrato da __init__.py).
   // Usa folder_paths di ComfyUI internamente — affidabile su tutte le versioni.
@@ -120,6 +249,31 @@ async function fetchInputImages() {
   }
 
   console.warn("[DataManager] Impossibile recuperare la lista immagini.");
+  return [];
+}
+
+async function fetchInputAudio() {
+  // Use the dedicated backend endpoint that returns only audio files.
+  // This avoids relying on fetchInputImages() fallbacks that filter by image extensions.
+  try {
+    const resp = await api.fetchApi("/dm/list_audio");
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch (e) {
+    console.warn("[DataManager] /dm/list_audio:", e);
+  }
+  // Fallback: filter full list locally
+  try {
+    const resp = await api.fetchApi("/dm/list_inputs");
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data)) return data.filter(f => AUDIO_EXTS.has(f.split(".").pop().toLowerCase()));
+    }
+  } catch (e) {
+    console.warn("[DataManager] /dm/list_inputs fallback:", e);
+  }
   return [];
 }
 
@@ -342,6 +496,158 @@ function openImagePicker(currentValue, onConfirm) {
   const confirmBtn = document.createElement("button");
   confirmBtn.textContent = "✓ Confirm";
   confirmBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#4a9eff;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  confirmBtn.onclick = () => { onConfirm(selected); overlay.remove(); };
+  right.appendChild(cancelBtn);
+  right.appendChild(confirmBtn);
+  btnRow.appendChild(clearBtn);
+  btnRow.appendChild(right);
+  box.appendChild(btnRow);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dialog: audio picker (same UI as image picker, filtered for audio files)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function openAudioPicker(currentValue, onConfirm) {
+  const overlay = createOverlay();
+  const box = document.createElement("div");
+  box.style.cssText = `
+    background:#1e1e2e; border:1px solid #444; border-radius:10px;
+    padding:20px 24px; width:560px; max-width:96vw; color:#eee;
+    box-shadow:0 8px 32px rgba(0,0,0,.7);
+    max-height:92vh; display:flex; flex-direction:column; gap:12px;`;
+  box.innerHTML = `<h3 style="margin:0;font-size:15px;color:#adf;">🎵 Choose Audio File</h3>`;
+
+  // Upload
+  const uploadRow = document.createElement("div");
+  uploadRow.style.cssText = "display:flex;align-items:center;gap:10px;flex-shrink:0;";
+  const uploadBtn = document.createElement("button");
+  uploadBtn.textContent = "⬆ Upload new file…";
+  uploadBtn.style.cssText = `padding:7px 14px;border-radius:6px;border:1px solid #555;
+    background:#2a2a3e;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;`;
+  const uploadStatus = document.createElement("span");
+  uploadStatus.style.cssText = "font-size:12px;color:#aaa;";
+  uploadBtn.onclick = () => {
+    const fi = document.createElement("input");
+    fi.type = "file";
+    fi.accept = "audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.opus";
+    fi.onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      uploadBtn.disabled = true;
+      uploadStatus.textContent = "⟳ Uploading…";
+      const result = await uploadImage(file); // same endpoint accepts any file
+      uploadBtn.disabled = false;
+      if (result) {
+        uploadStatus.textContent = `✅ ${result.filename}`;
+        selected = result;
+        loadGallery();
+      } else {
+        uploadStatus.textContent = "❌ Error";
+      }
+    };
+    fi.click();
+  };
+  uploadRow.appendChild(uploadBtn);
+  uploadRow.appendChild(uploadStatus);
+  box.appendChild(uploadRow);
+
+  // Gallery label
+  const galLabel = document.createElement("div");
+  galLabel.style.cssText = "font-size:11px;color:#666;flex-shrink:0;";
+  galLabel.textContent = "Audio files in the input folder (double-click to select and confirm):";
+  box.appendChild(galLabel);
+
+  // Gallery list (audio files as rows, not thumbnails)
+  const gallery = document.createElement("div");
+  gallery.style.cssText = `
+    display:flex; flex-direction:column; gap:4px;
+    overflow-y:auto; flex:1; min-height:120px; max-height:360px;
+    background:#0e0e1a; border-radius:8px; padding:8px; border:1px solid #2a2a3e;`;
+  box.appendChild(gallery);
+
+  let selected = normalizeAudioValue(currentValue);
+
+  function refreshSelection() {
+    gallery.querySelectorAll(".dm-ai").forEach(el => {
+      const match = selected && el.dataset.fn === selected.filename
+                    && el.dataset.sf === (selected.subfolder ?? "");
+      el.style.outline    = match ? "2px solid #ff4a7a" : "2px solid transparent";
+      el.style.background = match ? "#2e1a2e" : "#1a1a2e";
+    });
+  }
+
+  async function loadGallery() {
+    gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:8px;">⟳ Loading…</div>`;
+    const files = await fetchInputAudio();
+    gallery.innerHTML = "";
+    if (!files.length) {
+      gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:8px;">No audio files in the input folder.</div>`;
+      return;
+    }
+    files.forEach(filename => {
+      const parts = filename.split("/");
+      const fname = parts.pop();
+      const sf    = parts.join("/");
+      const av    = { filename: fname, subfolder: sf, type: "input" };
+      const url   = audioViewUrl(av);
+
+      const item = document.createElement("div");
+      item.className = "dm-ai";
+      item.dataset.fn = fname;
+      item.dataset.sf = sf;
+      item.style.cssText = `cursor:pointer;border-radius:5px;padding:8px 10px;
+        outline:2px solid transparent;background:#1a1a2e;
+        display:flex;align-items:center;gap:10px;`;
+
+      const icon = document.createElement("div");
+      icon.style.cssText = "font-size:18px;flex-shrink:0;";
+      icon.textContent = "🎵";
+
+      const info = document.createElement("div");
+      info.style.cssText = "flex:1;overflow:hidden;";
+      const nameEl = document.createElement("div");
+      nameEl.style.cssText = "font-size:12px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      nameEl.textContent = fname;
+      const durEl = document.createElement("div");
+      durEl.style.cssText = "font-size:10px;color:#666;margin-top:2px;";
+      durEl.textContent = "--:--";
+      // Load duration
+      loadAudioDuration(url, () => { durEl.textContent = _durationCache[url] ?? "--:--"; });
+      info.appendChild(nameEl);
+      info.appendChild(durEl);
+
+      item.appendChild(icon);
+      item.appendChild(info);
+
+      item.onclick    = () => { selected = av; refreshSelection(); };
+      item.ondblclick = () => { selected = av; onConfirm(selected); overlay.remove(); };
+      gallery.appendChild(item);
+    });
+    refreshSelection();
+  }
+
+  loadGallery();
+
+  // Buttons
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-shrink:0;";
+  const clearBtn = document.createElement("button");
+  clearBtn.textContent = "🗑 Remove";
+  clearBtn.style.cssText = "padding:6px 12px;border-radius:6px;border:1px solid #8f3333;background:transparent;color:#f66;cursor:pointer;font-size:12px;";
+  clearBtn.onclick = () => { selected = null; refreshSelection(); };
+  const right = document.createElement("div");
+  right.style.cssText = "display:flex;gap:8px;";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#333;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  cancelBtn.onclick = () => overlay.remove();
+  const confirmBtn = document.createElement("button");
+  confirmBtn.textContent = "✓ Confirm";
+  confirmBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#ff4a7a;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
   confirmBtn.onclick = () => { onConfirm(selected); overlay.remove(); };
   right.appendChild(cancelBtn);
   right.appendChild(confirmBtn);
@@ -632,9 +938,10 @@ class DataManagerWidget {
 
   _drawGrid(ctx, x, y, w) {
     const IDX_W = 32;
-    this._areas.headers = [];
-    this._areas.cells   = [];
-    this._areas.delBtns = [];
+    this._areas.headers   = [];
+    this._areas.cells     = [];
+    this._areas.delBtns   = [];
+    this._areas.audioBtns = [];
 
     // ── Header ─────────────────────────────────────────────────────────────
     let cx = x + IDX_W;
@@ -691,6 +998,8 @@ class DataManagerWidget {
 
         if (col.type === "image") {
           this._drawImageCell(ctx, cellX, ry, cw, ROW_H, val);
+        } else if (col.type === "audio") {
+          this._drawAudioCell(ctx, cellX, ry, cw, ROW_H, val);
         } else {
           const txt = val != null ? String(val) : "";
           ctx.fillStyle = txt ? "#ccc" : "#383858";
@@ -797,6 +1106,58 @@ class DataManagerWidget {
     ctx.fillText("✎", x + w - 4, y + h - 4);
   }
 
+  // ── Audio cell: play/stop button + duration ──────────────────────────────
+
+  _drawAudioCell(ctx, x, y, w, h, val) {
+    const audioVal = normalizeAudioValue(val);
+    const pad     = 4;
+    const btnSize = 28;   // fixed small square button — leaves room for duration
+
+    if (!audioVal) {
+      ctx.fillStyle = "#1a1a2e"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.font = "18px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("🎵", x + w/2, y + h/2 + 6);
+      ctx.fillStyle = "#383858"; ctx.font = "8px sans-serif";
+      ctx.fillText("audio", x + w/2, y + h - 5);
+      return;
+    }
+
+    const url     = audioViewUrl(audioVal);
+    const playing = audioIsPlaying(url);
+
+    // Background
+    ctx.fillStyle = playing ? "#1a0e2e" : "#111120";
+    ctx.fillRect(x+1, y+1, w-2, h-2);
+
+    // Play/Stop button — vertically centered, fixed size
+    const bx = x + pad;
+    const by = y + (h - btnSize) / 2;
+    ctx.fillStyle = playing ? "#ff4a7a" : "#3a2a4e";
+    ctx.beginPath(); ctx.roundRect(bx, by, btnSize, btnSize, 5); ctx.fill();
+
+    // Button icon
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(playing ? "⏹" : "▶", bx + btnSize / 2, by + btnSize / 2 + 5);
+
+    // Duration — to the right of the button.
+    // loadAudioDuration queues a redraw callback; once metadata loads
+    // the cache is populated and the next draw() shows the real value.
+    if (_durationCache[url] === undefined) {
+      loadAudioDuration(url, () => this.node.graph?.setDirtyCanvas(true));
+    }
+    const dur = _durationCache[url] ?? "--:--";
+    ctx.fillStyle = playing ? "#ff8aaa" : "#aaa";
+    ctx.font = "11px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(dur, bx + btnSize + 8, y + h / 2 + 4);
+
+    // Register play button hit area
+    if (!this._areas.audioBtns) this._areas.audioBtns = [];
+    this._areas.audioBtns.push({ url, x: bx, y: by, w: btnSize, h: btnSize });
+  }
+
   // ── Mouse handler ─────────────────────────────────────────────────────────
   //
   // pos[] è RELATIVO AL NODO in LiteGraph.
@@ -841,12 +1202,24 @@ class DataManagerWidget {
       }
     }
 
+    // Audio play buttons (checked before cells to allow play without opening picker)
+    for (const ab of this._areas.audioBtns ?? []) {
+      if (hit(ab)) {
+        audioToggle(ab.url, () => this.node.graph?.setDirtyCanvas(true));
+        return true;
+      }
+    }
+
     // Cells
     for (const cell of this._areas.cells) {
       if (hit(cell)) {
         const curVal = this.rows[cell.rowIdx]?.[cell.colId];
         if (cell.col.type === "image") {
           openImagePicker(curVal, newVal => {
+            this.setCellValue(cell.rowIdx, cell.colId, newVal);
+          });
+        } else if (cell.col.type === "audio") {
+          openAudioPicker(curVal, newVal => {
             this.setCellValue(cell.rowIdx, cell.colId, newVal);
           });
         } else {

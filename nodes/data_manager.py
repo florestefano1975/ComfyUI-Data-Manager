@@ -25,7 +25,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 # Supported column types
-COLUMN_TYPES = ["string", "int", "float", "image"]
+COLUMN_TYPES = ["string", "int", "float", "image", "audio"]
 
 # Built-in template presets
 PRESETS: dict[str, list[dict]] = {
@@ -69,8 +69,8 @@ def _cast_value(value: Any, col_type: str) -> Any:
             return float(str(value))
         if col_type == "string":
             return str(value)
-        if col_type == "image":
-            # The image value is a dict {filename, subfolder, type}.
+        if col_type in ("image", "audio"):
+            # Both image and audio store a dict {filename, subfolder, type}.
             # Must NOT be cast to string — preserve it as a dict.
             if isinstance(value, dict):
                 return value
@@ -83,7 +83,7 @@ def _cast_value(value: Any, col_type: str) -> Any:
                         return parsed
                 except Exception:
                     pass
-                return value  # fallback: stringa grezza (path legacy)
+                return value  # fallback: raw string (legacy path)
     except (ValueError, TypeError):
         pass
     return value

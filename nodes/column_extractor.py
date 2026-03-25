@@ -291,3 +291,78 @@ class ExtractImagePathNode:
         # load_image=False: returns a placeholder to avoid breaking downstream nodes
         tensor, mask = _empty_image_tensor()
         return (path, tensor, mask)
+
+
+def _load_audio_tensor(path: str):
+    """
+    Loads an audio file from disk and returns a ComfyUI AUDIO dict:
+      { "waveform": Tensor[1, C, S] float32, "sample_rate": int }
+
+    Compatible with PreviewAudio, SaveAudio and other standard audio nodes.
+    Uses torchaudio (bundled with ComfyUI) with soundfile as fallback.
+    Returns a silent 1-sample placeholder if the file cannot be loaded.
+    """
+    import torch
+
+    def _silent(sr: int = 44100):
+        return {"waveform": torch.zeros(1, 1, 1), "sample_rate": sr}
+
+    if not path or not os.path.isfile(path):
+        print(f"[DataManager] Audio file not found: '{path}'")
+        return _silent()
+
+    # Try torchaudio first (always available in ComfyUI)
+    try:
+        import torchaudio
+        waveform, sample_rate = torchaudio.load(path)
+        # waveform shape from torchaudio: [C, S] → we need [1, C, S]
+        return {"waveform": waveform.unsqueeze(0), "sample_rate": sample_rate}
+    except Exception as e:
+        print(f"[DataManager] torchaudio failed for '{path}': {e}")
+
+    # Fallback: soundfile
+    try:
+        import soundfile as sf
+        import numpy as np
+        data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
+        # data shape: [S, C] → convert to [1, C, S]
+        waveform = torch.from_numpy(data.T).unsqueeze(0)
+        return {"waveform": waveform, "sample_rate": sample_rate}
+    except Exception as e:
+        print(f"[DataManager] soundfile failed for '{path}': {e}")
+
+    return _silent()
+
+
+class ExtractAudioPathNode:
+    """
+    Extracts an audio column.
+    Emits the resolved file path (STRING) and a ComfyUI AUDIO tensor
+    compatible with PreviewAudio, SaveAudio and other standard audio nodes.
+    """
+    CATEGORY = "Data Manager/Extractors"
+    FUNCTION = "extract"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "row_data":    ("DM_ROW", {}),
+            "column_name": ("STRING", {"default": ""}),
+        }, "optional": {
+            "load_audio": ("BOOLEAN", {"default": True}),
+        }}
+
+    RETURN_TYPES = ("STRING", "AUDIO")
+    RETURN_NAMES = ("path",   "audio")
+
+    def extract(self, row_data: dict, column_name: str, load_audio: bool = True) -> tuple:
+        raw  = _get_value(row_data, column_name)
+        path = _resolve_image_path(raw) or ""
+
+        if load_audio:
+            audio = _load_audio_tensor(path)
+        else:
+            import torch
+            audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
+
+        return (path, audio)
