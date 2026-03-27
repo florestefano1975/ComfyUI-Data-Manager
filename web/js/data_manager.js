@@ -750,11 +750,23 @@ class DataManagerWidget {
     // ── Hit areas: aggiornate ogni draw(), usate in mouse() ────────────────
     // Coordinates RELATIVE TO WIDGET (posY=0 at top of widget).
     this._areas = {
-      toolbar : [],   // { key, x, y, w, h }
-      headers : [],   // { colId, x, y, w, h }
-      cells   : [],   // { rowIdx, colId, col, x, y, w, h }
-      delBtns : [],   // { rowIdx, x, y, w, h }
+      toolbar   : [],   // { key, x, y, w, h }
+      headers   : [],   // { colId, x, y, w, h }
+      cells     : [],   // { rowIdx, colId, col, x, y, w, h }
+      delBtns   : [],   // { rowIdx, x, y, w, h }
+      rowHandles: [],   // { rowIdx, x, y, w, h }  — drag handle per le righe
     };
+
+    // ── Drag & drop state ────────────────────────────────────────────────────
+    this._drag = null;
+    // _drag = {
+    //   type      : "col" | "row"
+    //   fromIdx   : number        (index in schema or rows)
+    //   colId     : string|null   (for col drag)
+    //   currentX  : number        (mouse x, for col drop indicator)
+    //   currentY  : number        (mouse y, for row drop indicator)
+    //   targetIdx : number        (computed drop target)
+    // }
   }
 
   get schema() { return this.payload.schema; }
@@ -812,6 +824,23 @@ class DataManagerWidget {
     if (col.type === "int")   v = (value !== "" && value !== null) ? parseInt(value, 10) : null;
     if (col.type === "float") v = (value !== "" && value !== null) ? parseFloat(value)   : null;
     this.rows[rowIdx][colId] = v;
+    this.commit();
+  }
+
+  reorderColumn(fromIdx, toIdx) {
+    if (fromIdx === toIdx) return;
+    // Adjust toIdx if moving right (element removed from left shifts target)
+    const adjustedTo = toIdx > fromIdx ? toIdx - 1 : toIdx;
+    const col = this.schema.splice(fromIdx, 1)[0];
+    this.schema.splice(adjustedTo, 0, col);
+    this.commit();
+  }
+
+  reorderRow(fromIdx, toIdx) {
+    if (fromIdx === toIdx) return;
+    const adjustedTo = toIdx > fromIdx ? toIdx - 1 : toIdx;
+    const row = this.rows.splice(fromIdx, 1)[0];
+    this.rows.splice(adjustedTo, 0, row);
     this.commit();
   }
 
@@ -938,10 +967,11 @@ class DataManagerWidget {
 
   _drawGrid(ctx, x, y, w) {
     const IDX_W = 32;
-    this._areas.headers   = [];
-    this._areas.cells     = [];
-    this._areas.delBtns   = [];
-    this._areas.audioBtns = [];
+    this._areas.headers    = [];
+    this._areas.cells      = [];
+    this._areas.delBtns    = [];
+    this._areas.audioBtns  = [];
+    this._areas.rowHandles = [];
 
     // ── Header ─────────────────────────────────────────────────────────────
     let cx = x + IDX_W;
@@ -951,29 +981,31 @@ class DataManagerWidget {
 
     this.schema.forEach(col => {
       const cw = this.colWidth(col.id);
+      const DRAG_W = 14;  // width of the drag handle zone on the left
       ctx.fillStyle = "#1e1e38"; ctx.fillRect(cx, y, cw, HEADER_H);
       ctx.fillStyle = TYPE_COLORS[col.type] ?? "#888"; ctx.fillRect(cx, y, cw, 3);
-      // Column label
+      // Drag handle ⠿ — left strip, same style as row handles
+      ctx.fillStyle = "#3a3a5a";
+      ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("⠿", cx + DRAG_W / 2, y + HEADER_H / 2 + 4);
+      // Column label — starts after drag handle
       ctx.fillStyle = "#ddd"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
-      ctx.save(); ctx.beginPath(); ctx.rect(cx + 4, y + 3, cw - 52, HEADER_H - 3); ctx.clip();
-      ctx.fillText(col.label, cx + 4, y + HEADER_H / 2 + 4); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(cx + DRAG_W + 3, y + 3, cw - DRAG_W - 52, HEADER_H - 3); ctx.clip();
+      ctx.fillText(col.label, cx + DRAG_W + 3, y + HEADER_H / 2 + 4); ctx.restore();
       // Type badge
       ctx.fillStyle = (TYPE_COLORS[col.type] ?? "#888") + "44";
       ctx.beginPath(); ctx.roundRect(cx + cw - 48, y + 9, 23, 13, 3); ctx.fill();
       ctx.fillStyle = "#ddd"; ctx.font = "8px monospace"; ctx.textAlign = "center";
       ctx.fillText(col.type.slice(0,3), cx + cw - 36, y + 19);
-      // × button to delete column (hover area: last 20px)
+      // × button to delete column (last 20px)
       ctx.fillStyle = "#6e1818";
       ctx.beginPath(); ctx.roundRect(cx + cw - 20, y + 8, 14, HEADER_H - 16, 3); ctx.fill();
       ctx.fillStyle = "#faa"; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("×", cx + cw - 13, y + HEADER_H / 2 + 3);
-      // Tooltip ✎ per indicare che è clickbile
-      ctx.fillStyle = "#556"; ctx.font = "9px sans-serif"; ctx.textAlign = "left";
-      ctx.fillText("✎", cx + 4, y + HEADER_H - 4);
       // Divider
       ctx.strokeStyle = "#2a2a42"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx+cw, y); ctx.lineTo(cx+cw, y + HEADER_H + this.rows.length * ROW_H); ctx.stroke();
-      this._areas.headers.push({ colId:col.id, x:cx, y, w:cw, h:HEADER_H });
+      this._areas.headers.push({ colId:col.id, x:cx, y, w:cw, h:HEADER_H, dragW:DRAG_W });
       cx += cw;
     });
 
@@ -987,9 +1019,20 @@ class DataManagerWidget {
       ctx.fillStyle = ri % 2 === 0 ? "#131320" : "#171728";
       ctx.fillRect(x, ry, cx - x + 26, ROW_H);
 
-      // Row number
-      ctx.fillStyle = "#555"; ctx.font = "9px monospace"; ctx.textAlign = "center";
-      ctx.fillText(ri + 1, x + IDX_W / 2, ry + ROW_H / 2 + 3);
+      // Row index cell background
+      ctx.fillStyle = ri % 2 === 0 ? "#0e0e1c" : "#12121f";
+      ctx.fillRect(x, ry, IDX_W, ROW_H);
+
+      // Drag handle (top half) + row number (bottom half)
+      const handleH = Math.floor(ROW_H / 2);
+      ctx.fillStyle = "#3a3a5a";
+      ctx.font = "10px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("⠿", x + IDX_W / 2, ry + handleH / 2 + 4);
+      ctx.fillStyle = "#555"; ctx.font = "9px monospace";
+      ctx.fillText(ri + 1, x + IDX_W / 2, ry + handleH + handleH / 2 + 3);
+
+      // Register row handle hit area (top half of index cell)
+      this._areas.rowHandles.push({ rowIdx: ri, x, y: ry, w: IDX_W, h: handleH });
 
       let cellX = x + IDX_W;
       this.schema.forEach(col => {
@@ -1025,6 +1068,61 @@ class DataManagerWidget {
 
     ctx.strokeStyle = "#3a3a5a"; ctx.lineWidth = 1;
     ctx.strokeRect(x, y, cx - x + 26, HEADER_H + this.rows.length * ROW_H);
+
+    // ── Drag indicator ───────────────────────────────────────────────────────
+    if (this._drag) {
+      const d = this._drag;
+      ctx.save();
+      if (d.type === "col") {
+        // Vertical drop line between columns
+        let lineX = x + 32; // IDX_W
+        let colX  = x + 32;
+        let target = 0;
+        for (let i = 0; i < this.schema.length; i++) {
+          const cw = this.colWidth(this.schema[i].id);
+          if (d.currentX > colX + cw / 2) { lineX = colX + cw; target = i + 1; }
+          colX += cw;
+        }
+        d.targetIdx = target;
+        ctx.strokeStyle = "#4a9eff";
+        ctx.lineWidth   = 3;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(lineX, y);
+        ctx.lineTo(lineX, y + HEADER_H + this.rows.length * ROW_H);
+        ctx.stroke();
+        // Dragged header ghost
+        const dragCol = this.schema[d.fromIdx];
+        if (dragCol) {
+          ctx.fillStyle = "rgba(74,158,255,0.25)";
+          ctx.fillRect(d.currentX - this.colWidth(dragCol.id)/2, y,
+                       this.colWidth(dragCol.id), HEADER_H);
+        }
+      } else {
+        // Horizontal drop line between rows
+        let lineY  = y + HEADER_H;
+        let target = 0;
+        for (let i = 0; i < this.rows.length; i++) {
+          if (d.currentY > y + HEADER_H + i * ROW_H + ROW_H / 2) {
+            lineY  = y + HEADER_H + (i + 1) * ROW_H;
+            target = i + 1;
+          }
+        }
+        d.targetIdx = target;
+        ctx.strokeStyle = "#4aff9f";
+        ctx.lineWidth   = 3;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, lineY);
+        ctx.lineTo(cx + 26, lineY);
+        ctx.stroke();
+        // Dragged row ghost
+        const ghostY = y + HEADER_H + d.fromIdx * ROW_H;
+        ctx.fillStyle = "rgba(74,255,159,0.15)";
+        ctx.fillRect(x, ghostY, cx - x + 26, ROW_H);
+      }
+      ctx.restore();
+    }
   }
 
   // ── Cella image: mostra thumbnail inline ───────────────────────────────
@@ -1167,7 +1265,6 @@ class DataManagerWidget {
   // Confrontiamo direttamente pos[] con le _areas (che usano y assoluta).
 
   mouse(event, pos, node) {
-    if (event.type !== "pointerdown") return false;
     const mx = pos[0];
     const my = pos[1];
 
@@ -1175,21 +1272,63 @@ class DataManagerWidget {
       mx >= area.x && mx <= area.x + area.w &&
       my >= area.y && my <= area.y + area.h;
 
+    // ── Drag move ─────────────────────────────────────────────────────────────
+    if (event.type === "pointermove" && this._drag) {
+      this._drag.currentX = mx;
+      this._drag.currentY = my;
+      this.node.graph?.setDirtyCanvas(true);
+      return true;
+    }
+
+    // ── Drag end ──────────────────────────────────────────────────────────────
+    if (event.type === "pointerup" && this._drag) {
+      const d = this._drag;
+      this._drag = null;
+      if (d.type === "col" && d.targetIdx !== undefined) {
+        this.reorderColumn(d.fromIdx, d.targetIdx);
+      } else if (d.type === "row" && d.targetIdx !== undefined) {
+        this.reorderRow(d.fromIdx, d.targetIdx);
+      }
+      this.node.graph?.setDirtyCanvas(true);
+      return true;
+    }
+
+    if (event.type !== "pointerdown") return false;
+
     // Toolbar
     for (const btn of this._areas.toolbar) {
       if (hit(btn)) { this._handleToolbar(btn.key); return true; }
     }
 
-    // Column headers: click = modifica, click su × = elimina
+    // Column headers: drag on left portion, × on right, click in middle = edit
     for (const ch of this._areas.headers) {
       if (hit(ch)) {
-        // × zone (last 20px on the right of the header)
+        // × zone — last 20px: delete
         if (mx >= ch.x + ch.w - 20) {
           if (confirm(`Delete column "${this.schema.find(c=>c.id===ch.colId)?.label}"?`))
             this.deleteColumn(ch.colId);
-        } else {
-          this._openEditColumn(ch.colId);
+          return true;
         }
+        // Drag zone — the ⠿ handle strip on the left
+        if (mx <= ch.x + (ch.dragW ?? 14)) {
+          const fromIdx = this.schema.findIndex(c => c.id === ch.colId);
+          if (fromIdx >= 0) {
+            this._drag = { type:"col", fromIdx, colId:ch.colId,
+                           currentX:mx, currentY:my, targetIdx:fromIdx };
+          }
+          return true;
+        }
+        // Middle zone: edit column
+        this._openEditColumn(ch.colId);
+        return true;
+      }
+    }
+
+    // Row drag handles (top half of index column)
+    for (const rh of this._areas.rowHandles ?? []) {
+      if (hit(rh)) {
+        this._drag = { type:"row", fromIdx:rh.rowIdx,
+                       currentX:mx, currentY:my, targetIdx:rh.rowIdx };
         return true;
       }
     }
@@ -1340,17 +1479,46 @@ app.registerExtension({
       // Per intercettare i click prima degli altri widget usiamo onMouseDown
       // sul nodo stesso, che viene chiamato prima del dispatch ai widget.
       const self = this;
+      const NODE_HEADER = 30;
+
+      // Helper to translate node-relative pos to widget-relative pos
+      function localPos(pos) { return [pos[0], pos[1] - NODE_HEADER]; }
+
+      function getDmWidget() {
+        return self.widgets?.find(w => w.name === "dm_grid")?.dmRef ?? null;
+      }
+
+      // onMouseDown — handles pointerdown (and drag move/up via LiteGraph hooks)
       const origMouseDown = this.onMouseDown;
       this.onMouseDown = function(event, pos, graphCanvas) {
-        // Calcola la Y locale rispetto al nodo (sottraiamo l'header del nodo ~30px)
-        const NODE_HEADER = 30;
-        const localPos = [pos[0], pos[1] - NODE_HEADER];
-        const cw = self.widgets?.find(w => w.name === "dm_grid");
-        if (cw?.dmRef) {
-          const handled = cw.dmRef.mouse(event, localPos, self);
+        const dm = getDmWidget();
+        if (dm) {
+          const handled = dm.mouse(event, localPos(pos), self);
           if (handled) return true;
         }
         return origMouseDown?.apply(this, arguments);
+      };
+
+      // onMouseMove — forwards pointermove to dmWidget so drag indicator updates
+      const origMouseMove = this.onMouseMove;
+      this.onMouseMove = function(event, pos, graphCanvas) {
+        const dm = getDmWidget();
+        if (dm?._drag) {
+          dm.mouse(event, localPos(pos), self);
+          return true;
+        }
+        return origMouseMove?.apply(this, arguments);
+      };
+
+      // onMouseUp — commits the drag on pointer release
+      const origMouseUp = this.onMouseUp;
+      this.onMouseUp = function(event, pos, graphCanvas) {
+        const dm = getDmWidget();
+        if (dm?._drag) {
+          dm.mouse(event, localPos(pos), self);
+          return true;
+        }
+        return origMouseUp?.apply(this, arguments);
       };
 
       this.size = [600, 360];
