@@ -5,6 +5,8 @@ directly inside your workflows — ideal for storyboards, character sheets, data
 
 ![Preview of main node](assets/main-node-preview.png)
 
+![Preview of main node](assets/main-node-preview-2.png)
+
 ---
 
 ## 📦 Installation
