@@ -1,0 +1,264 @@
+{
+  "id": "4b561040-5071-4cac-99a8-015d65e9a94a",
+  "revision": 0,
+  "last_node_id": 59,
+  "last_link_id": 65,
+  "nodes": [
+    {
+      "id": 55,
+      "type": "ExtractAudioPathNode",
+      "pos": [
+        2050,
+        30
+      ],
+      "size": [
+        270,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "row_data",
+          "type": "DM_ROW",
+          "link": 63
+        }
+      ],
+      "outputs": [
+        {
+          "name": "path",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            62
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "florestefano1975/ComfyUI-Data-Manager",
+        "ver": "51ee0c8bebd19094e0340d33ece02d1d349ba67c",
+        "Node name for S&R": "ExtractAudioPathNode"
+      },
+      "widgets_values": [
+        "Audio",
+        true
+      ]
+    },
+    {
+      "id": 57,
+      "type": "PreviewAudio",
+      "pos": [
+        2380,
+        50
+      ],
+      "size": [
+        380,
+        90
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 62
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "PreviewAudio"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 58,
+      "type": "ExtractImagePathNode",
+      "pos": [
+        2053.266447744832,
+        222.96556569779054
+      ],
+      "size": [
+        270,
+        122
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "row_data",
+          "type": "DM_ROW",
+          "link": 64
+        }
+      ],
+      "outputs": [
+        {
+          "name": "path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            65
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "florestefano1975/ComfyUI-Data-Manager",
+        "ver": "75609f39ea6ea26398dfbca4cef8281f60e45170",
+        "Node name for S&R": "ExtractImagePathNode"
+      },
+      "widgets_values": [
+        "Image",
+        true
+      ]
+    },
+    {
+      "id": 37,
+      "type": "DataManagerNode",
+      "pos": [
+        900,
+        140
+      ],
+      "size": [
+        1060,
+        386
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "row_data",
+          "type": "DM_ROW",
+          "links": [
+            63,
+            64
+          ]
+        },
+        {
+          "name": "total_rows",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "column_schema",
+          "type": "DM_SCHEMA",
+          "links": []
+        },
+        {
+          "name": "dataset",
+          "type": "DM_DATASET",
+          "links": []
+        }
+      ],
+      "properties": {
+        "aux_id": "florestefano1975/ComfyUI-Data-Manager",
+        "ver": "88a0dfdd5039554340c99e2267d2568fb6e50526",
+        "Node name for S&R": "DataManagerNode"
+      },
+      "widgets_values": [
+        "{\"schema\":[{\"id\":\"col_cb92wie\",\"label\":\"Scene\",\"type\":\"string\"},{\"id\":\"col_rpip162\",\"label\":\"Prompt\",\"type\":\"string\"},{\"id\":\"col_xyan8mj\",\"label\":\"Negative\",\"type\":\"string\"},{\"id\":\"col_3s9sv4p\",\"label\":\"CFG\",\"type\":\"float\"},{\"id\":\"col_gh959no\",\"label\":\"Steps\",\"type\":\"int\"},{\"id\":\"col_3ttjnt2\",\"label\":\"Image\",\"type\":\"image\"},{\"id\":\"col_zpoktip\",\"label\":\"Audio\",\"type\":\"audio\"}],\"rows\":[{\"col_cb92wie\":\"Man\",\"col_rpip162\":null,\"col_xyan8mj\":null,\"col_gh959no\":8,\"col_3s9sv4p\":1,\"col_3ttjnt2\":{\"filename\":\"20260129095746.png\",\"subfolder\":\"\",\"type\":\"input\"},\"col_zpoktip\":{\"filename\":\"02 - Nothing to Say.mp3\",\"subfolder\":\"\",\"type\":\"input\"}},{\"col_cb92wie\":\"Womam\",\"col_rpip162\":null,\"col_xyan8mj\":null,\"col_gh959no\":8,\"col_3s9sv4p\":1,\"col_3ttjnt2\":{\"filename\":\"20260129094314.png\",\"subfolder\":\"\",\"type\":\"input\"},\"col_zpoktip\":{\"filename\":\"tutto quello che vedi non esiste - female - EN.mp3\",\"subfolder\":\"\",\"type\":\"input\"}},{\"col_cb92wie\":\"VR Headset\",\"col_rpip162\":null,\"col_xyan8mj\":null,\"col_gh959no\":8,\"col_3s9sv4p\":1,\"col_3ttjnt2\":{\"filename\":\"sofia-lasheva-JaaJajNHr2Q-unsplash.jpg\",\"subfolder\":\"\",\"type\":\"input\"},\"col_zpoktip\":{\"filename\":\"ken_il_guerriero.mp3\",\"subfolder\":\"\",\"type\":\"input\"}}],\"meta\":{\"name\":\"Storyboard\",\"file_path\":\"\"}}",
+        0,
+        true
+      ]
+    },
+    {
+      "id": 59,
+      "type": "PreviewImage",
+      "pos": [
+        2380,
+        240
+      ],
+      "size": [
+        370,
+        360
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 65
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      62,
+      55,
+      1,
+      57,
+      0,
+      "AUDIO"
+    ],
+    [
+      63,
+      37,
+      0,
+      55,
+      0,
+      "DM_ROW"
+    ],
+    [
+      64,
+      37,
+      0,
+      58,
+      0,
+      "DM_ROW"
+    ],
+    [
+      65,
+      58,
+      1,
+      59,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "workflowRendererVersion": "LG",
+    "ds": {
+      "scale": 1.0212765957446808,
+      "offset": [
+        -576.6666666666665,
+        326.3402777777778
+      ]
+    },
+    "frontendVersion": "1.42.8",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
