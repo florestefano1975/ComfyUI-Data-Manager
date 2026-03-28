@@ -25,7 +25,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 # Supported column types
-COLUMN_TYPES = ["string", "int", "float", "image", "audio"]
+COLUMN_TYPES = ["string", "int", "float", "boolean", "image", "audio"]
 
 # Built-in template presets
 PRESETS: dict[str, list[dict]] = {
@@ -69,6 +69,12 @@ def _cast_value(value: Any, col_type: str) -> Any:
             return float(str(value))
         if col_type == "string":
             return str(value)
+        if col_type == "boolean":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() in ("true", "1", "yes")
+            return bool(value)
         if col_type in ("image", "audio"):
             # Both image and audio store a dict {filename, subfolder, type}.
             # Must NOT be cast to string — preserve it as a dict.

@@ -366,3 +366,31 @@ class ExtractAudioPathNode:
             audio = {"waveform": torch.zeros(1, 1, 1), "sample_rate": 44100}
 
         return (path, audio)
+
+
+class ExtractBoolNode:
+    """Extracts a boolean column. Emits a BOOLEAN value (True/False)."""
+    CATEGORY = "Data Manager/Extractors"
+    FUNCTION = "extract"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "row_data":    ("DM_ROW", {}),
+            "column_name": ("STRING", {"default": ""}),
+        }, "optional": {
+            "fallback": ("BOOLEAN", {"default": False}),
+        }}
+
+    RETURN_TYPES = ("BOOLEAN",)
+    RETURN_NAMES = ("value",)
+
+    def extract(self, row_data: dict, column_name: str, fallback: bool = False) -> tuple:
+        v = _get_value(row_data, column_name)
+        if v is None:
+            return (fallback,)
+        if isinstance(v, bool):
+            return (v,)
+        if isinstance(v, str):
+            return (v.lower() in ("true", "1", "yes"),)
+        return (bool(v),)

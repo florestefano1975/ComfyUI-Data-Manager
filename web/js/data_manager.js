@@ -11,13 +11,14 @@ import { api } from "../../scripts/api.js";
 // Costanti
 // ─────────────────────────────────────────────────────────────────────────────
 
-const COLUMN_TYPES = ["string", "int", "float", "image", "audio"];
+const COLUMN_TYPES = ["string", "int", "float", "boolean", "image", "audio"];
 const TYPE_COLORS  = {
   string : "#4a9eff",
   int    : "#ff9f4a",
   float  : "#4aff9f",
   image  : "#c44aff",
   audio  : "#ff4a7a",
+  boolean: "#4affd4",
 };
 const ROW_H     = 52;   // altezza riga — abbastanza per thumbnail
 const HEADER_H  = 32;
@@ -817,6 +818,14 @@ class DataManagerWidget {
     this.commit();
   }
 
+  duplicateRow(idx) {
+    if (!this.rows[idx]) return;
+    // Deep clone via JSON round-trip to avoid shared object references
+    const clone = JSON.parse(JSON.stringify(this.rows[idx]));
+    this.rows.splice(idx + 1, 0, clone);
+    this.commit();
+  }
+
   setCellValue(rowIdx, colId, value) {
     const col = this.schema.find(c => c.id === colId);
     if (!col || !this.rows[rowIdx]) return;
@@ -970,6 +979,7 @@ class DataManagerWidget {
     this._areas.headers    = [];
     this._areas.cells      = [];
     this._areas.delBtns    = [];
+    this._areas.dupBtns    = [];
     this._areas.audioBtns  = [];
     this._areas.rowHandles = [];
 
@@ -1043,6 +1053,8 @@ class DataManagerWidget {
           this._drawImageCell(ctx, cellX, ry, cw, ROW_H, val);
         } else if (col.type === "audio") {
           this._drawAudioCell(ctx, cellX, ry, cw, ROW_H, val);
+        } else if (col.type === "boolean") {
+          this._drawBoolCell(ctx, cellX, ry, cw, ROW_H, val);
         } else {
           const txt = val != null ? String(val) : "";
           ctx.fillStyle = txt ? "#ccc" : "#383858";
@@ -1057,13 +1069,26 @@ class DataManagerWidget {
         cellX += cw;
       });
 
-      // × delete row
-      const bx = cellX + 4, by2 = ry + (ROW_H - 16) / 2;
+      // Buttons stacked vertically: ⧉ (top) and × (bottom)
+      const btnX   = cellX + 4;
+      const gap    = 3;
+      const btnH   = (ROW_H - gap) / 2 - 3;  // ~22px each
+      const dupBy  = ry + 3;
+      const delBy  = dupBy + btnH + gap;
+
+      // ⧉ duplicate
+      ctx.fillStyle = "#1e3a2e";
+      ctx.beginPath(); ctx.roundRect(btnX, dupBy, 18, btnH, 3); ctx.fill();
+      ctx.fillStyle = "#4affd4"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("⧉", btnX + 9, dupBy + btnH / 2 + 4);
+      this._areas.dupBtns.push({ rowIdx:ri, x:btnX, y:dupBy, w:18, h:btnH });
+
+      // × delete
       ctx.fillStyle = "#6e1818";
-      ctx.beginPath(); ctx.roundRect(bx, by2, 16, 16, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(btnX, delBy, 18, btnH, 3); ctx.fill();
       ctx.fillStyle = "#fff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
-      ctx.fillText("×", bx + 8, by2 + 11);
-      this._areas.delBtns.push({ rowIdx:ri, x:bx, y:by2, w:16, h:16 });
+      ctx.fillText("×", btnX + 9, delBy + btnH / 2 + 4);
+      this._areas.delBtns.push({ rowIdx:ri, x:btnX, y:delBy, w:18, h:btnH });
     });
 
     ctx.strokeStyle = "#3a3a5a"; ctx.lineWidth = 1;
@@ -1256,6 +1281,37 @@ class DataManagerWidget {
     this._areas.audioBtns.push({ url, x: bx, y: by, w: btnSize, h: btnSize });
   }
 
+  // ── Boolean cell: checkbox rendering ────────────────────────────────────
+
+  _drawBoolCell(ctx, x, y, w, h, val) {
+    const checked = val === true || val === "true" || val === 1;
+    const size    = Math.min(h - 10, 22);
+    const bx      = x + (w - size) / 2;
+    const by      = y + (h - size) / 2;
+
+    // Cell background
+    ctx.fillStyle = checked ? "#0e2a1e" : "#111120";
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+
+    // Checkbox border
+    ctx.strokeStyle = checked ? "#4affd4" : "#3a3a5a";
+    ctx.lineWidth   = 2;
+    ctx.beginPath(); ctx.roundRect(bx, by, size, size, 4); ctx.stroke();
+
+    // Checkmark
+    if (checked) {
+      ctx.strokeStyle = "#4affd4";
+      ctx.lineWidth   = 2.5;
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      ctx.beginPath();
+      ctx.moveTo(bx + size * 0.2, by + size * 0.5);
+      ctx.lineTo(bx + size * 0.42, by + size * 0.72);
+      ctx.lineTo(bx + size * 0.8, by + size * 0.28);
+      ctx.stroke();
+    }
+  }
+
   // ── Mouse handler ─────────────────────────────────────────────────────────
   //
   // pos[] è RELATIVO AL NODO in LiteGraph.
@@ -1333,6 +1389,14 @@ class DataManagerWidget {
       }
     }
 
+    // Row duplicate buttons
+    for (const db of this._areas.dupBtns ?? []) {
+      if (hit(db)) {
+        this.duplicateRow(db.rowIdx);
+        return true;
+      }
+    }
+
     // Row delete buttons
     for (const db of this._areas.delBtns) {
       if (hit(db)) {
@@ -1361,6 +1425,10 @@ class DataManagerWidget {
           openAudioPicker(curVal, newVal => {
             this.setCellValue(cell.rowIdx, cell.colId, newVal);
           });
+        } else if (cell.col.type === "boolean") {
+          // Toggle directly on click — no dialog needed
+          const current = curVal === true || curVal === "true" || curVal === 1;
+          this.setCellValue(cell.rowIdx, cell.colId, !current);
         } else {
           openTextCellEditor(cell.col, curVal, newVal => {
             this.setCellValue(cell.rowIdx, cell.colId, newVal);

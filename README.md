@@ -38,6 +38,7 @@ The central node with the interactive grid.
 | Delete column | Click the `×` button on the right side of the header |
 | Reorder rows | Drag the `⠿` handle in the top half of the row index cell |
 | Edit cell | Click on a cell → edit dialog |
+| Duplicate row | `⧉` button on the right of the row (inserts a copy below) |
 | Delete row | `×` button on the right of the row |
 | Apply preset | `📋 Preset` button |
 | Import CSV | `⬆ CSV` button |
@@ -51,6 +52,7 @@ The central node with the interactive grid.
 | `float` | 🟢 green | Decimal number |
 | `image` | 🟣 purple | Image file — inline thumbnail, picked from ComfyUI input folder |
 | `audio` | 🔴 pink | Audio file — inline ▶/⏹ player with duration, picked from ComfyUI input folder |
+| `boolean` | 🟦 teal | True/False checkbox — click to toggle, no dialog |
 
 **Inputs:**
 - `row_index` — index of the row to emit (0-based)
@@ -86,6 +88,16 @@ Typed extractors with an optional `fallback` value if the cell is empty.
 
 ```
 row_data + column_name + fallback → value (STRING | INT | FLOAT)
+```
+
+---
+
+### ✅ Extract Bool
+
+Extracts a boolean column. Emits a `BOOLEAN` value with an optional fallback.
+
+```
+row_data + column_name + fallback → value (BOOLEAN)
 ```
 
 ---
@@ -238,3 +250,5 @@ so it travels with the workflow automatically. A sample payload:
 - `torch` / `torchaudio` — tensor ops and audio loading (included in ComfyUI)
 - `mutagen` _(optional)_ — fast server-side audio duration reading; falls back to `wave` module if missing
 - `soundfile` _(optional)_ — audio loading fallback if `torchaudio` fails
+
+No additional dependencies are required for the `boolean` column type.
