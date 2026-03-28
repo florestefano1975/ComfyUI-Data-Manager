@@ -25,7 +25,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 # Supported column types
-COLUMN_TYPES = ["string", "int", "float", "boolean", "image", "audio"]
+COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio"]
 
 # Built-in template presets
 PRESETS: dict[str, list[dict]] = {
@@ -75,6 +75,9 @@ def _cast_value(value: Any, col_type: str) -> Any:
             if isinstance(value, str):
                 return value.lower() in ("true", "1", "yes")
             return bool(value)
+        if col_type == "select":
+            # A select value is just a string (one of the configured options)
+            return str(value) if value is not None else None
         if col_type in ("image", "audio"):
             # Both image and audio store a dict {filename, subfolder, type}.
             # Must NOT be cast to string — preserve it as a dict.
@@ -108,6 +111,8 @@ def _validate_payload(payload: dict) -> tuple[bool, str]:
             return False, f"malformed column: {col}"
         if col["type"] not in COLUMN_TYPES:
             return False, f"invalid column type: {col['type']}"
+        if col["type"] == "select" and "options" not in col:
+            col["options"] = []  # tolerate missing options, default to empty list
     return True, ""
 
 

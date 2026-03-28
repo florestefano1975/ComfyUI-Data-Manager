@@ -394,3 +394,30 @@ class ExtractBoolNode:
         if isinstance(v, str):
             return (v.lower() in ("true", "1", "yes"),)
         return (bool(v),)
+
+
+class ExtractSelectNode:
+    """
+    Extracts a select/enum column.
+    Emits the selected option as STRING, or the fallback if no option is selected.
+    """
+    CATEGORY = "Data Manager/Extractors"
+    FUNCTION = "extract"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "row_data":    ("DM_ROW", {}),
+            "column_name": ("STRING", {"default": ""}),
+        }, "optional": {
+            "fallback": ("STRING", {"default": ""}),
+        }}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("value",)
+
+    def extract(self, row_data: dict, column_name: str, fallback: str = "") -> tuple:
+        v = _get_value(row_data, column_name)
+        if v is None or v == "":
+            return (fallback,)
+        return (str(v),)

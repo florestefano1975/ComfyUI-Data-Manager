@@ -17,6 +17,7 @@ from .nodes.column_extractor import (
     ExtractIntNode,
     ExtractFloatNode,
     ExtractBoolNode,
+    ExtractSelectNode,
     ExtractImagePathNode,
     ExtractAudioPathNode,
 )
@@ -122,6 +123,7 @@ NODE_CLASS_MAPPINGS = {
     "ExtractIntNode":       ExtractIntNode,
     "ExtractFloatNode":     ExtractFloatNode,
     "ExtractBoolNode":      ExtractBoolNode,
+    "ExtractSelectNode":    ExtractSelectNode,
     "ExtractImagePathNode": ExtractImagePathNode,
     "ExtractAudioPathNode": ExtractAudioPathNode,
     "RowIteratorNode":      RowIteratorNode,
@@ -135,6 +137,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ExtractIntNode":       "🔢 Extract Int",
     "ExtractFloatNode":     "🔣 Extract Float",
     "ExtractBoolNode":      "✅ Extract Bool",
+    "ExtractSelectNode":    "🔽 Extract Select",
     "ExtractImagePathNode": "🖼️ Extract Image Path",
     "ExtractAudioPathNode": "🎵 Extract Audio",
     "RowIteratorNode":      "🔄 Row Iterator",

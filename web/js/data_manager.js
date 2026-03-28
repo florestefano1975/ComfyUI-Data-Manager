@@ -11,7 +11,7 @@ import { api } from "../../scripts/api.js";
 // Costanti
 // ─────────────────────────────────────────────────────────────────────────────
 
-const COLUMN_TYPES = ["string", "int", "float", "boolean", "image", "audio"];
+const COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio"];
 const TYPE_COLORS  = {
   string : "#4a9eff",
   int    : "#ff9f4a",
@@ -19,6 +19,7 @@ const TYPE_COLORS  = {
   image  : "#c44aff",
   audio  : "#ff4a7a",
   boolean: "#4affd4",
+  select : "#ffd44a",
 };
 const ROW_H     = 52;   // altezza riga — abbastanza per thumbnail
 const HEADER_H  = 32;
@@ -665,19 +666,139 @@ function openAudioPicker(currentValue, onConfirm) {
 // Dialog: colonna
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Dialog: select cell picker — shows the configured options as a clickable list
+// ─────────────────────────────────────────────────────────────────────────────
+
+function openSelectPicker(col, currentValue, onConfirm) {
+  const options = col.options ?? [];
+  if (options.length === 0) {
+    alert(`Column "${col.label}" has no options defined. Edit the column to add some.`);
+    return;
+  }
+
+  const overlay = createOverlay();
+  const box = document.createElement("div");
+  box.style.cssText = `
+    background:#1e1e2e; border:1px solid #444; border-radius:10px;
+    padding:20px 24px; width:340px; max-width:96vw; color:#eee;
+    box-shadow:0 8px 32px rgba(0,0,0,.7);
+    max-height:80vh; display:flex; flex-direction:column; gap:10px;`;
+
+  const title = document.createElement("h3");
+  title.style.cssText = "margin:0; font-size:14px; color:#ffd44a;";
+  title.textContent = `▾ ${col.label}`;
+  box.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = `
+    display:flex; flex-direction:column; gap:4px;
+    overflow-y:auto; max-height:360px;`;
+
+  // "Clear" option at the top
+  const clearItem = document.createElement("div");
+  clearItem.style.cssText = `
+    padding:8px 12px; border-radius:5px; cursor:pointer;
+    font-size:12px; color:#555; font-style:italic;
+    border:1px solid #2a2a3e;`;
+  clearItem.textContent = "— clear selection —";
+  clearItem.onmouseenter = () => clearItem.style.background = "#2a2a3e";
+  clearItem.onmouseleave = () => clearItem.style.background = "transparent";
+  clearItem.onclick = () => { onConfirm(null); overlay.remove(); };
+  list.appendChild(clearItem);
+
+  options.forEach(opt => {
+    const item = document.createElement("div");
+    const isSelected = opt === currentValue;
+    item.style.cssText = `
+      padding:9px 12px; border-radius:5px; cursor:pointer;
+      font-size:13px; color:${isSelected ? "#ffd44a" : "#ddd"};
+      background:${isSelected ? "#2a2200" : "transparent"};
+      border:1px solid ${isSelected ? "#ffd44a44" : "#2a2a3e"};
+      display:flex; align-items:center; gap:8px;`;
+
+    const check = document.createElement("span");
+    check.style.cssText = `font-size:11px; color:#ffd44a; width:12px; flex-shrink:0;`;
+    check.textContent = isSelected ? "✓" : "";
+
+    const label = document.createElement("span");
+    label.textContent = opt;
+
+    item.appendChild(check);
+    item.appendChild(label);
+
+    item.onmouseenter = () => {
+      if (!isSelected) item.style.background = "#1e1e10";
+    };
+    item.onmouseleave = () => {
+      if (!isSelected) item.style.background = "transparent";
+    };
+    item.onclick = () => { onConfirm(opt); overlay.remove(); };
+    list.appendChild(item);
+  });
+
+  box.appendChild(list);
+
+  // Cancel button
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex; justify-content:flex-end;";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.style.cssText = `
+    padding:6px 16px; border-radius:6px; border:none;
+    background:#333; color:#fff; cursor:pointer; font-size:13px; font-weight:600;`;
+  cancelBtn.onclick = () => overlay.remove();
+  btnRow.appendChild(cancelBtn);
+  box.appendChild(btnRow);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+}
+
 function openColumnDialog(existingCol, onConfirm) {
   const form      = document.createElement("div");
   const labelWrap = inputField("Name / Label", existingCol?.label ?? "");
   const typeWrap  = selectField("Type", COLUMN_TYPES, existingCol?.type ?? "string");
   form.appendChild(labelWrap);
   form.appendChild(typeWrap);
+
+  // Options field — shown only when type = "select"
+  const optionsWrap = document.createElement("div");
+  optionsWrap.style.cssText = "margin-bottom:12px;";
+  optionsWrap.innerHTML = `
+    <label style="display:block;font-size:12px;color:#aaa;margin-bottom:4px;">
+      Options <span style="color:#666;font-weight:normal;">(one per line)</span>
+    </label>
+    <textarea rows="5" style="
+      width:100%; box-sizing:border-box; padding:7px 10px;
+      border-radius:5px; border:1px solid #555; background:#2a2a3e;
+      color:#eee; font-size:13px; resize:vertical; font-family:sans-serif;
+    ">${(existingCol?.options ?? []).join("\n")}</textarea>`;
+
+  function syncOptionsVisibility() {
+    const type = typeWrap.querySelector("select").value;
+    optionsWrap.style.display = type === "select" ? "block" : "none";
+  }
+  typeWrap.querySelector("select").addEventListener("change", syncOptionsVisibility);
+  syncOptionsVisibility();
+  form.appendChild(optionsWrap);
+
   createModal(existingCol ? "✏️ Edit Column" : "➕ Add Column", form, [
     { label: "Cancel",  primary: false, action: o => o.remove() },
     { label: "Confirm", primary: true,  action: overlay => {
       const label = labelWrap.querySelector("input").value.trim();
       const type  = typeWrap.querySelector("select").value;
       if (!label) { alert("Please enter a name."); return; }
-      onConfirm({ label, type });
+      let options = [];
+      if (type === "select") {
+        options = optionsWrap.querySelector("textarea").value
+          .split("\n")
+          .map(s => s.trim())
+          .filter(Boolean);
+        if (options.length === 0) { alert("Add at least one option for a Select column."); return; }
+      }
+      onConfirm({ label, type, options });
       overlay.remove();
     }}
   ]);
@@ -787,16 +908,16 @@ class DataManagerWidget {
 
   // ── Operazioni dati ───────────────────────────────────────────────────────
 
-  addColumn(label, type) {
+  addColumn(label, type, options = []) {
     const id = generateId();
-    this.schema.push({ id, label, type });
+    this.schema.push({ id, label, type, options });
     this.rows.forEach(r => { r[id] = null; });
     this.commit();
   }
 
-  editColumn(id, label, type) {
+  editColumn(id, label, type, options = []) {
     const c = this.schema.find(c => c.id === id);
-    if (c) { c.label = label; c.type = type; this.commit(); }
+    if (c) { c.label = label; c.type = type; c.options = options; this.commit(); }
   }
 
   deleteColumn(id) {
@@ -1055,6 +1176,8 @@ class DataManagerWidget {
           this._drawAudioCell(ctx, cellX, ry, cw, ROW_H, val);
         } else if (col.type === "boolean") {
           this._drawBoolCell(ctx, cellX, ry, cw, ROW_H, val);
+        } else if (col.type === "select") {
+          this._drawSelectCell(ctx, cellX, ry, cw, ROW_H, val, col.options ?? []);
         } else {
           const txt = val != null ? String(val) : "";
           ctx.fillStyle = txt ? "#ccc" : "#383858";
@@ -1312,6 +1435,34 @@ class DataManagerWidget {
     }
   }
 
+  // ── Select cell: dropdown-style rendering ───────────────────────────────
+
+  _drawSelectCell(ctx, x, y, w, h, val, options) {
+    const hasVal = val !== null && val !== undefined && val !== "";
+    const pad    = 6;
+
+    // Background
+    ctx.fillStyle = hasVal ? "#1a1a10" : "#111120";
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+
+    // Selected value text
+    ctx.fillStyle = hasVal ? "#ffd44a" : "#3a3a30";
+    ctx.font      = "11px sans-serif";
+    ctx.textAlign = "left";
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + pad, y, w - pad * 2 - 16, h);
+    ctx.clip();
+    ctx.fillText(hasVal ? String(val) : "— select —", x + pad, y + h / 2 + 4);
+    ctx.restore();
+
+    // Dropdown arrow
+    ctx.fillStyle = "#ffd44a";
+    ctx.font      = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("▾", x + w - 10, y + h / 2 + 3);
+  }
+
   // ── Mouse handler ─────────────────────────────────────────────────────────
   //
   // pos[] è RELATIVO AL NODO in LiteGraph.
@@ -1429,6 +1580,10 @@ class DataManagerWidget {
           // Toggle directly on click — no dialog needed
           const current = curVal === true || curVal === "true" || curVal === 1;
           this.setCellValue(cell.rowIdx, cell.colId, !current);
+        } else if (cell.col.type === "select") {
+          openSelectPicker(cell.col, curVal, newVal => {
+            this.setCellValue(cell.rowIdx, cell.colId, newVal);
+          });
         } else {
           openTextCellEditor(cell.col, curVal, newVal => {
             this.setCellValue(cell.rowIdx, cell.colId, newVal);
@@ -1444,7 +1599,7 @@ class DataManagerWidget {
   _handleToolbar(key) {
     switch (key) {
       case "addCol":
-        openColumnDialog(null, ({label,type}) => this.addColumn(label,type)); break;
+        openColumnDialog(null, ({label,type,options}) => this.addColumn(label,type,options)); break;
       case "addRow":
         if (!this.schema.length) alert("Add at least one column first.");
         else this.addRow();
@@ -1490,7 +1645,7 @@ class DataManagerWidget {
 
   _openEditColumn(colId) {
     const col = this.schema.find(c => c.id === colId);
-    if (col) openColumnDialog(col, ({label,type}) => this.editColumn(colId,label,type));
+    if (col) openColumnDialog(col, ({label,type,options}) => this.editColumn(colId,label,type,options));
   }
 
   computeSize(width) {

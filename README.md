@@ -53,6 +53,7 @@ The central node with the interactive grid.
 | `image` | purple | Image file — inline thumbnail, picked from ComfyUI input folder |
 | `audio` | pink | Audio file — inline ▶/⏹ player with duration, picked from ComfyUI input folder |
 | `boolean` | teal | True/False checkbox — click to toggle, no dialog |
+| `select` | yellow | Enum dropdown — options defined at column creation, click to pick |
 
 **Inputs:**
 - `row_index` — index of the row to emit (0-based)
@@ -98,6 +99,17 @@ Extracts a boolean column. Emits a `BOOLEAN` value with an optional fallback.
 
 ```
 row_data + column_name + fallback → value (BOOLEAN)
+```
+
+---
+
+### 🔽 Extract Select
+
+Extracts a select/enum column. Emits the selected option as `STRING`,
+or the fallback value if the cell is empty.
+
+```
+row_data + column_name + fallback → value (STRING)
 ```
 
 ---
@@ -233,6 +245,7 @@ so it travels with the workflow automatically. A sample payload:
 
 ## ⚠️ Notes
 
+- `select` columns store their list of options inside the column schema. Options are defined when creating or editing the column and can be updated at any time — existing cell values are preserved.
 - Columns and rows can be reordered by dragging the `⠿` handle — column headers on the left strip, rows on the top half of the index cell.
 - Both `image` and `audio` cells store a `{filename, subfolder, type}` object, resolved against ComfyUI's `input/` folder at execution time.
 - Image thumbnails and audio playback in the grid use the ComfyUI `/view` endpoint — files must be uploaded via the grid picker or the native Load Image node.
