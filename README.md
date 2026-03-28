@@ -47,12 +47,12 @@ The central node with the interactive grid.
 **Column types:**
 | Type | Color | Description |
 |---|---|---|
-| `string` | 🔵 blue | Free text |
-| `int` | 🟠 orange | Integer number |
-| `float` | 🟢 green | Decimal number |
-| `image` | 🟣 purple | Image file — inline thumbnail, picked from ComfyUI input folder |
-| `audio` | 🔴 pink | Audio file — inline ▶/⏹ player with duration, picked from ComfyUI input folder |
-| `boolean` | 🟦 teal | True/False checkbox — click to toggle, no dialog |
+| `string` | blue | Free text |
+| `int` | orange | Integer number |
+| `float` | green | Decimal number |
+| `image` | purple | Image file — inline thumbnail, picked from ComfyUI input folder |
+| `audio` | pink | Audio file — inline ▶/⏹ player with duration, picked from ComfyUI input folder |
+| `boolean` | teal | True/False checkbox — click to toggle, no dialog |
 
 **Inputs:**
 - `row_index` — index of the row to emit (0-based)
