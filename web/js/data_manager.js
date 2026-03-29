@@ -53,7 +53,7 @@ function readPayload(node) {
 }
 
 function emptyPayload() {
-  return { schema: [], rows: [], meta: { name: "Untitled", file_path: "" } };
+  return { schema: [], rows: [], meta: { name: "Untitled", file_path: "", col_widths: {} } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -882,12 +882,14 @@ class DataManagerWidget {
     // ── Drag & drop state ────────────────────────────────────────────────────
     this._drag = null;
     // _drag = {
-    //   type      : "col" | "row"
-    //   fromIdx   : number        (index in schema or rows)
-    //   colId     : string|null   (for col drag)
-    //   currentX  : number        (mouse x, for col drop indicator)
-    //   currentY  : number        (mouse y, for row drop indicator)
-    //   targetIdx : number        (computed drop target)
+    //   type      : "col" | "row" | "resize"
+    //   fromIdx   : number        (schema index, for col/row reorder)
+    //   colId     : string|null   (for col reorder and resize)
+    //   startX    : number        (mouse x at drag start, for resize)
+    //   startW    : number        (column width at drag start, for resize)
+    //   currentX  : number        (current mouse x)
+    //   currentY  : number        (current mouse y)
+    //   targetIdx : number        (computed drop target, for reorder)
     // }
   }
 
@@ -902,6 +904,8 @@ class DataManagerWidget {
   }
 
   commit() {
+    // Persist column widths inside meta so they survive workflow save/reload
+    this.payload.meta.col_widths = { ...this._colWidths };
     syncPayload(this.node, this.payload);
     this.node.graph?.setDirtyCanvas(true, true);
   }
@@ -1097,12 +1101,13 @@ class DataManagerWidget {
 
   _drawGrid(ctx, x, y, w) {
     const IDX_W = 32;
-    this._areas.headers    = [];
-    this._areas.cells      = [];
-    this._areas.delBtns    = [];
-    this._areas.dupBtns    = [];
-    this._areas.audioBtns  = [];
-    this._areas.rowHandles = [];
+    this._areas.headers      = [];
+    this._areas.resizeHandles = [];
+    this._areas.cells         = [];
+    this._areas.delBtns       = [];
+    this._areas.dupBtns       = [];
+    this._areas.audioBtns     = [];
+    this._areas.rowHandles    = [];
 
     // ── Header ─────────────────────────────────────────────────────────────
     let cx = x + IDX_W;
@@ -1123,20 +1128,43 @@ class DataManagerWidget {
       ctx.fillStyle = "#ddd"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
       ctx.save(); ctx.beginPath(); ctx.rect(cx + DRAG_W + 3, y + 3, cw - DRAG_W - 52, HEADER_H - 3); ctx.clip();
       ctx.fillText(col.label, cx + DRAG_W + 3, y + HEADER_H / 2 + 4); ctx.restore();
-      // Type badge
+      // Type badge — shifted left to make room for resize handle (RESIZE_W = 8px)
+      const RW = 8;  // same as RESIZE_W above
       ctx.fillStyle = (TYPE_COLORS[col.type] ?? "#888") + "44";
-      ctx.beginPath(); ctx.roundRect(cx + cw - 48, y + 9, 23, 13, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(cx + cw - 48 - RW, y + 9, 23, 13, 3); ctx.fill();
       ctx.fillStyle = "#ddd"; ctx.font = "8px monospace"; ctx.textAlign = "center";
-      ctx.fillText(col.type.slice(0,3), cx + cw - 36, y + 19);
-      // × button to delete column (last 20px)
+      ctx.fillText(col.type.slice(0,3), cx + cw - 36 - RW, y + 19);
+      // × button to delete column — shifted left by RW
       ctx.fillStyle = "#6e1818";
-      ctx.beginPath(); ctx.roundRect(cx + cw - 20, y + 8, 14, HEADER_H - 16, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(cx + cw - 20 - RW, y + 8, 14, HEADER_H - 16, 3); ctx.fill();
       ctx.fillStyle = "#faa"; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "center";
-      ctx.fillText("×", cx + cw - 13, y + HEADER_H / 2 + 3);
-      // Divider
+      ctx.fillText("×", cx + cw - 13 - RW, y + HEADER_H / 2 + 3);
+      // Resize handle — 6px strip on right edge of header, highlighted
+      // Layout (left → right): ⠿ drag | label | type badge | × delete | ↔ resize
+      const BAND_H    = 3;    // colour band at top
+      const RESIZE_W  = 8;    // resize handle width on the far right
+      const RESIZE_PAD = 2;   // gap between × and resize handle
+      const DEL_W     = 20;   // × button zone width (matches rendering below)
+
+      // Resize handle — rightmost strip, below the colour band
+      const rHandleX = cx + cw - RESIZE_W;
+      const rHandleY = y + BAND_H + 2;
+      const rHandleH = HEADER_H - BAND_H - 4;
+      const isResizing = this._drag?.type === "resize" && this._drag?.colId === col.id;
+      ctx.fillStyle = isResizing ? "#4a9eff" : "#2e2e50";
+      ctx.beginPath(); ctx.roundRect(rHandleX + 1, rHandleY, RESIZE_W - 2, rHandleH, 2); ctx.fill();
+      ctx.fillStyle = isResizing ? "#fff" : "#666";
+      ctx.font = "7px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("↔", rHandleX + RESIZE_W / 2, rHandleY + rHandleH / 2 + 3);
+
+      // Divider line (column boundary)
       ctx.strokeStyle = "#2a2a42"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx+cw, y); ctx.lineTo(cx+cw, y + HEADER_H + this.rows.length * ROW_H); ctx.stroke();
-      this._areas.headers.push({ colId:col.id, x:cx, y, w:cw, h:HEADER_H, dragW:DRAG_W });
+
+      // Hit areas
+      this._areas.resizeHandles.push({ colId:col.id, x: rHandleX, y, w: RESIZE_W, h: HEADER_H });
+      // Header click area excludes the resize strip on the right
+      this._areas.headers.push({ colId:col.id, x:cx, y, w:cw - RESIZE_W, h:HEADER_H, dragW:DRAG_W });
       cx += cw;
     });
 
@@ -1483,6 +1511,14 @@ class DataManagerWidget {
     if (event.type === "pointermove" && this._drag) {
       this._drag.currentX = mx;
       this._drag.currentY = my;
+      if (this._drag.type === "resize") {
+        const delta = mx - this._drag.startX;
+        const newW  = Math.max(60, this._drag.startW + delta);
+        this._colWidths[this._drag.colId] = newW;
+        // Write through to payload so the width is included in the next save
+        this.payload.meta.col_widths = { ...this._colWidths };
+        syncPayload(this.node, this.payload);
+      }
       this.node.graph?.setDirtyCanvas(true);
       return true;
     }
@@ -1496,6 +1532,7 @@ class DataManagerWidget {
       } else if (d.type === "row" && d.targetIdx !== undefined) {
         this.reorderRow(d.fromIdx, d.targetIdx);
       }
+      // "resize" needs no extra action — width already updated live
       this.node.graph?.setDirtyCanvas(true);
       return true;
     }
@@ -1505,6 +1542,19 @@ class DataManagerWidget {
     // Toolbar
     for (const btn of this._areas.toolbar) {
       if (hit(btn)) { this._handleToolbar(btn.key); return true; }
+    }
+
+    // Resize handles — checked before headers so the 6px strip takes priority
+    for (const rh of this._areas.resizeHandles ?? []) {
+      if (hit(rh)) {
+        this._drag = {
+          type   : "resize",
+          colId  : rh.colId,
+          startX : mx,
+          startW : this.colWidth(rh.colId),
+        };
+        return true;
+      }
     }
 
     // Column headers: drag on left portion, × on right, click in middle = edit
@@ -1769,7 +1819,10 @@ app.registerExtension({
           // Sanity check: deve avere schema e rows
           if (!Array.isArray(parsed.schema) || !Array.isArray(parsed.rows)) return;
           cw.dmRef.payload    = parsed;
-          cw.dmRef._colWidths = {};
+          // Restore persisted column widths from meta
+          cw.dmRef._colWidths = (parsed.meta?.col_widths && typeof parsed.meta.col_widths === "object")
+            ? { ...parsed.meta.col_widths }
+            : {};
           cw.dmRef._imgCache  = {};
           // Ridimensiona il nodo in base ai dati caricati
           node.size[1] = cw.dmRef.requiredHeight() + 120;

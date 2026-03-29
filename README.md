@@ -35,6 +35,7 @@ The central node with the interactive grid.
 | Add row | `+ Row` button in the toolbar |
 | Edit column name/type | Click on the column header (centre area) |
 | Reorder columns | Drag the `⠿` handle on the left side of the column header |
+| Resize column | Drag the `↔` handle on the right edge of the column header |
 | Delete column | Click the `×` button on the right side of the header |
 | Reorder rows | Drag the `⠿` handle in the top half of the row index cell |
 | Edit cell | Click on a cell → edit dialog |
@@ -245,6 +246,7 @@ so it travels with the workflow automatically. A sample payload:
 
 ## ⚠️ Notes
 
+- Column widths are adjustable by dragging the `↔` handle on the right edge of any column header. The minimum width is 60px. Widths are persisted in the workflow JSON (inside `meta.col_widths`) and restored automatically on reload.
 - `select` columns store their list of options inside the column schema. Options are defined when creating or editing the column and can be updated at any time — existing cell values are preserved.
 - Columns and rows can be reordered by dragging the `⠿` handle — column headers on the left strip, rows on the top half of the index cell.
 - Both `image` and `audio` cells store a `{filename, subfolder, type}` object, resolved against ComfyUI's `input/` folder at execution time.
