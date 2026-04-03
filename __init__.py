@@ -20,6 +20,7 @@ from .nodes.column_extractor import (
     ExtractSelectNode,
     ExtractImagePathNode,
     ExtractAudioPathNode,
+    ExtractVideoPathNode,
 )
 from .nodes.row_iterator import RowIteratorNode
 
@@ -35,6 +36,7 @@ try:
         SUPPORTED_EXTS = {
             ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif",
             ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus", ".weba",
+            ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv",
         }
         try:
             import folder_paths  # ComfyUI internal module
@@ -69,6 +71,80 @@ try:
                     rel = f.relative_to(input_dir)
                     results.append(str(rel).replace("\\", "/"))
         return web.json_response(results)
+
+    async def _list_video_files(request):
+        """Returns only video files from the ComfyUI input folder."""
+        VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv"}
+        try:
+            import folder_paths
+            input_dir = Path(folder_paths.get_input_directory())
+        except ImportError:
+            input_dir = Path(__file__).parent.parent.parent / "input"
+        results = []
+        if input_dir.exists():
+            for f in sorted(input_dir.rglob("*")):
+                if f.suffix.lower() in VIDEO_EXTS and f.is_file():
+                    rel = f.relative_to(input_dir)
+                    results.append(str(rel).replace("\\", "/"))
+        return web.json_response(results)
+
+    async def _video_thumbnail(request):
+        """
+        Extracts and caches a JPEG thumbnail from the first frame of a video.
+        Query params: filename, subfolder (optional)
+        Tries OpenCV first, then ffmpeg subprocess as fallback.
+        Thumbnail is cached as <video>.dm_thumb.jpg next to the source file.
+        """
+        filename  = request.rel_url.query.get("filename", "")
+        subfolder = request.rel_url.query.get("subfolder", "")
+        if not filename:
+            return web.Response(status=400, text="filename required")
+        try:
+            import folder_paths
+            input_dir = Path(folder_paths.get_input_directory())
+        except ImportError:
+            input_dir = Path(__file__).parent.parent.parent / "input"
+
+        video_path = (input_dir / subfolder / filename) if subfolder else (input_dir / filename)
+        if not video_path.is_file():
+            return web.Response(status=404, text="file not found")
+
+        thumb_path = video_path.with_suffix(".dm_thumb.jpg")
+        if thumb_path.exists():
+            return web.FileResponse(thumb_path)
+
+        # Try OpenCV
+        try:
+            import cv2
+            cap = cv2.VideoCapture(str(video_path))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = cap.read()
+            cap.release()
+            if ret:
+                h, w = frame.shape[:2]
+                scale = min(1.0, 320 / w)
+                if scale < 1.0:
+                    frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+                cv2.imwrite(str(thumb_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                return web.FileResponse(thumb_path)
+        except Exception as e:
+            print(f"[DataManager] cv2 thumbnail failed: {e}")
+
+        # Fallback: ffmpeg
+        try:
+            import subprocess
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(video_path),
+                 "-vframes", "1", "-vf", "scale=320:-1",
+                 "-f", "image2", str(thumb_path)],
+                capture_output=True, timeout=15
+            )
+            if thumb_path.exists():
+                return web.FileResponse(thumb_path)
+        except Exception as e:
+            print(f"[DataManager] ffmpeg thumbnail failed: {e}")
+
+        return web.Response(status=500, text="could not extract thumbnail")
 
     async def _audio_duration(request):
         """Returns the duration in seconds for an audio file in the input folder.
@@ -109,8 +185,10 @@ try:
     # api.fetchApi("/dm/...") in the browser sends GET /api/dm/...
     # so we register on /api/dm/... in the aiohttp router.
     PromptServer.instance.app.router.add_get("/api/dm/list_inputs", _list_input_images)
-    PromptServer.instance.app.router.add_get("/api/dm/list_audio",  _list_audio_files)
-    PromptServer.instance.app.router.add_get("/api/dm/duration",    _audio_duration)
+    PromptServer.instance.app.router.add_get("/api/dm/list_audio",   _list_audio_files)
+    PromptServer.instance.app.router.add_get("/api/dm/list_video",   _list_video_files)
+    PromptServer.instance.app.router.add_get("/api/dm/duration",     _audio_duration)
+    PromptServer.instance.app.router.add_get("/api/dm/thumbnail",    _video_thumbnail)
 
 except Exception as _e:
     print(f"[DataManager] WARNING: could not register route /dm/list_inputs: {_e}")
@@ -126,6 +204,7 @@ NODE_CLASS_MAPPINGS = {
     "ExtractSelectNode":    ExtractSelectNode,
     "ExtractImagePathNode": ExtractImagePathNode,
     "ExtractAudioPathNode": ExtractAudioPathNode,
+    "ExtractVideoPathNode": ExtractVideoPathNode,
     "RowIteratorNode":      RowIteratorNode,
 }
 
@@ -140,6 +219,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ExtractSelectNode":    "🔽 Extract Select",
     "ExtractImagePathNode": "🖼️ Extract Image Path",
     "ExtractAudioPathNode": "🎵 Extract Audio",
+    "ExtractVideoPathNode": "🎬 Extract Video",
     "RowIteratorNode":      "🔄 Row Iterator",
 }
 

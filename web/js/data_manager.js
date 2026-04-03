@@ -11,7 +11,7 @@ import { api } from "../../scripts/api.js";
 // Costanti
 // ─────────────────────────────────────────────────────────────────────────────
 
-const COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio"];
+const COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio", "video"];
 const TYPE_COLORS  = {
   string : "#4a9eff",
   int    : "#ff9f4a",
@@ -20,6 +20,7 @@ const TYPE_COLORS  = {
   audio  : "#ff4a7a",
   boolean: "#4affd4",
   select : "#ffd44a",
+  video  : "#ff7a1a",
 };
 const ROW_H     = 52;   // altezza riga — abbastanza per thumbnail
 const HEADER_H  = 32;
@@ -293,6 +294,44 @@ async function uploadImage(file) {
     console.error("[DataManager] Upload:", e);
     return null;
   }
+}
+
+const VIDEO_EXTS = new Set(["mp4","mov","avi","mkv","webm","m4v","wmv"]);
+
+// Same {filename,subfolder,type} format as image/audio
+const normalizeVideoValue = normalizeImageValue;
+
+// URL to stream a video file through the ComfyUI /view endpoint
+function videoViewUrl(videoVal) {
+  const v = normalizeVideoValue(videoVal);
+  if (!v) return null;
+  return `/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder ?? "")}&type=${v.type ?? "input"}`;
+}
+
+// URL for the server-generated thumbnail of the first video frame
+function videoThumbUrl(videoVal) {
+  const v = normalizeVideoValue(videoVal);
+  if (!v) return null;
+  return `/api/dm/thumbnail?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder ?? "")}`;
+}
+
+async function fetchInputVideo() {
+  try {
+    const resp = await api.fetchApi("/dm/list_video");
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch (e) { console.warn("[DataManager] /dm/list_video:", e); }
+  // Fallback: filter full list
+  try {
+    const resp = await api.fetchApi("/dm/list_inputs");
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data)) return data.filter(f => VIDEO_EXTS.has(f.split(".").pop().toLowerCase()));
+    }
+  } catch (e) { console.warn("[DataManager] /dm/list_inputs fallback (video):", e); }
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -665,6 +704,157 @@ function openAudioPicker(currentValue, onConfirm) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dialog: colonna
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dialog: video picker (gallery with server-generated thumbnails + upload)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function openVideoPicker(currentValue, onConfirm) {
+  const overlay = createOverlay();
+  const box = document.createElement("div");
+  box.style.cssText = `
+    background:#1e1e2e; border:1px solid #444; border-radius:10px;
+    padding:20px 24px; width:600px; max-width:96vw; color:#eee;
+    box-shadow:0 8px 32px rgba(0,0,0,.7);
+    max-height:92vh; display:flex; flex-direction:column; gap:12px;`;
+  box.innerHTML = `<h3 style="margin:0;font-size:15px;color:#ff7a1a;">🎬 Choose Video</h3>`;
+
+  // Upload
+  const uploadRow = document.createElement("div");
+  uploadRow.style.cssText = "display:flex;align-items:center;gap:10px;flex-shrink:0;";
+  const uploadBtn = document.createElement("button");
+  uploadBtn.textContent = "⬆ Upload new file…";
+  uploadBtn.style.cssText = `padding:7px 14px;border-radius:6px;border:1px solid #555;
+    background:#2a2a3e;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;`;
+  const uploadStatus = document.createElement("span");
+  uploadStatus.style.cssText = "font-size:12px;color:#aaa;";
+  uploadBtn.onclick = () => {
+    const fi = document.createElement("input");
+    fi.type = "file";
+    fi.accept = "video/*,.mp4,.mov,.avi,.mkv,.webm,.m4v,.wmv";
+    fi.onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      uploadBtn.disabled = true;
+      uploadStatus.textContent = "⟳ Uploading…";
+      const result = await uploadImage(file); // same endpoint accepts any file
+      uploadBtn.disabled = false;
+      if (result) {
+        uploadStatus.textContent = `✅ ${result.filename}`;
+        selected = result;
+        loadGallery();
+      } else {
+        uploadStatus.textContent = "❌ Error";
+      }
+    };
+    fi.click();
+  };
+  uploadRow.appendChild(uploadBtn);
+  uploadRow.appendChild(uploadStatus);
+  box.appendChild(uploadRow);
+
+  // Gallery label
+  const galLabel = document.createElement("div");
+  galLabel.style.cssText = "font-size:11px;color:#666;flex-shrink:0;";
+  galLabel.textContent = "Video files in the input folder (double-click to select and confirm):";
+  box.appendChild(galLabel);
+
+  // Gallery grid — thumbnails like the image picker
+  const gallery = document.createElement("div");
+  gallery.style.cssText = `
+    display:grid; grid-template-columns:repeat(auto-fill,120px);
+    gap:8px; overflow-y:auto; flex:1; min-height:180px; max-height:400px;
+    background:#0e0e1a; border-radius:8px; padding:10px; border:1px solid #2a2a3e;`;
+  box.appendChild(gallery);
+
+  let selected = normalizeVideoValue(currentValue);
+
+  function refreshSelection() {
+    gallery.querySelectorAll(".dm-vi").forEach(el => {
+      const match = selected && el.dataset.fn === selected.filename
+                    && el.dataset.sf === (selected.subfolder ?? "");
+      el.style.outline    = match ? "2px solid #ff7a1a" : "2px solid transparent";
+      el.style.background = match ? "#2e1a00" : "#1a1a2e";
+    });
+  }
+
+  async function loadGallery() {
+    gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:10px;grid-column:1/-1;">⟳ Loading…</div>`;
+    const files = await fetchInputVideo();
+    gallery.innerHTML = "";
+    if (!files.length) {
+      gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:10px;grid-column:1/-1;">No video files in the input folder.</div>`;
+      return;
+    }
+    files.forEach(filename => {
+      const parts = filename.split("/");
+      const fname = parts.pop();
+      const sf    = parts.join("/");
+      const vv    = { filename: fname, subfolder: sf, type: "input" };
+
+      const item = document.createElement("div");
+      item.className = "dm-vi";
+      item.dataset.fn = fname;
+      item.dataset.sf = sf;
+      item.style.cssText = `cursor:pointer;border-radius:6px;overflow:hidden;
+        outline:2px solid transparent;background:#1a1a2e;
+        display:flex;flex-direction:column;align-items:center;
+        width:120px;flex-shrink:0;`;
+
+      // Thumbnail from server — fallback to 🎬 icon
+      const thumb = document.createElement("img");
+      thumb.src = videoThumbUrl(vv);
+      thumb.style.cssText = "width:120px;height:68px;object-fit:cover;display:block;";
+      thumb.onerror = () => {
+        thumb.style.display = "none";
+        const ic = document.createElement("div");
+        ic.style.cssText = "width:120px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px;background:#1a1a2e;";
+        ic.textContent = "🎬";
+        item.insertBefore(ic, item.firstChild);
+      };
+
+      const lbl = document.createElement("div");
+      lbl.style.cssText = "font-size:9px;color:#888;padding:2px 4px;width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;";
+      lbl.textContent = fname;
+      lbl.title = filename;
+
+      item.appendChild(thumb);
+      item.appendChild(lbl);
+      item.onclick    = () => { selected = vv; refreshSelection(); };
+      item.ondblclick = () => { selected = vv; onConfirm(selected); overlay.remove(); };
+      gallery.appendChild(item);
+    });
+    refreshSelection();
+  }
+
+  loadGallery();
+
+  // Buttons
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-shrink:0;";
+  const clearBtn = document.createElement("button");
+  clearBtn.textContent = "🗑 Remove";
+  clearBtn.style.cssText = "padding:6px 12px;border-radius:6px;border:1px solid #8f3333;background:transparent;color:#f66;cursor:pointer;font-size:12px;";
+  clearBtn.onclick = () => { selected = null; refreshSelection(); };
+  const right = document.createElement("div");
+  right.style.cssText = "display:flex;gap:8px;";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#333;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  cancelBtn.onclick = () => overlay.remove();
+  const confirmBtn = document.createElement("button");
+  confirmBtn.textContent = "✓ Confirm";
+  confirmBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#ff7a1a;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  confirmBtn.onclick = () => { onConfirm(selected); overlay.remove(); };
+  right.appendChild(cancelBtn);
+  right.appendChild(confirmBtn);
+  btnRow.appendChild(clearBtn);
+  btnRow.appendChild(right);
+  box.appendChild(btnRow);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dialog: select cell picker — shows the configured options as a clickable list
@@ -1202,6 +1392,8 @@ class DataManagerWidget {
           this._drawImageCell(ctx, cellX, ry, cw, ROW_H, val);
         } else if (col.type === "audio") {
           this._drawAudioCell(ctx, cellX, ry, cw, ROW_H, val);
+        } else if (col.type === "video") {
+          this._drawVideoCell(ctx, cellX, ry, cw, ROW_H, val);
         } else if (col.type === "boolean") {
           this._drawBoolCell(ctx, cellX, ry, cw, ROW_H, val);
         } else if (col.type === "select") {
@@ -1432,6 +1624,85 @@ class DataManagerWidget {
     this._areas.audioBtns.push({ url, x: bx, y: by, w: btnSize, h: btnSize });
   }
 
+  // ── Video cell: thumbnail + play icon overlay ───────────────────────────
+
+  _drawVideoCell(ctx, x, y, w, h, val) {
+    const videoVal = normalizeVideoValue(val);
+    const pad      = 3;
+    const th       = h - pad * 2;   // thumbnail square
+
+    if (!videoVal) {
+      ctx.fillStyle = "#1a1a1e"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.font = "18px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("🎬", x + w/2, y + h/2 + 6);
+      ctx.fillStyle = "#383838"; ctx.font = "8px sans-serif";
+      ctx.fillText("video", x + w/2, y + h - 5);
+      return;
+    }
+
+    const thumbUrl = videoThumbUrl(videoVal);
+
+    // Reuse image cache infrastructure for thumbnails
+    if (!this._imgCache[thumbUrl]) {
+      this._imgCache[thumbUrl] = "loading";
+      const img = new Image();
+      img.onload  = () => { this._imgCache[thumbUrl] = img;     this.node.graph?.setDirtyCanvas(true); };
+      img.onerror = () => { this._imgCache[thumbUrl] = "error"; this.node.graph?.setDirtyCanvas(true); };
+      img.src = thumbUrl;
+    }
+
+    const cached = this._imgCache[thumbUrl];
+
+    if (cached === "loading") {
+      ctx.fillStyle = "#1a1a2e"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = "#555"; ctx.font = "14px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("⟳", x + w/2, y + h/2 + 5);
+      return;
+    }
+
+    if (cached === "error") {
+      // No thumbnail available — show icon + filename
+      ctx.fillStyle = "#1a1010"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.font = "18px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("🎬", x + pad + th/2, y + h/2 + 6);
+      ctx.fillStyle = "#aaa"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+      ctx.save(); ctx.beginPath(); ctx.rect(x + pad + th + 5, y, w - th - pad*2 - 5, h); ctx.clip();
+      ctx.fillText(videoVal.filename, x + pad + th + 6, y + h/2 + 4); ctx.restore();
+      return;
+    }
+
+    // Draw thumbnail with centered crop (object-fit:cover)
+    const iw = cached.naturalWidth  || cached.width;
+    const ih = cached.naturalHeight || cached.height;
+    let sx = 0, sy = 0, sw = iw, sh = ih;
+    if (iw > 0 && ih > 0) {
+      if (iw / ih > 1) { sw = ih; sx = (iw - sw) / 2; }
+      else             { sh = iw; sy = (ih - sh) / 2; }
+    }
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(x + pad, y + pad, th, th, 3); ctx.clip();
+    ctx.drawImage(cached, sx, sy, sw, sh, x + pad, y + pad, th, th);
+    ctx.restore();
+
+    // Play icon overlay on thumbnail
+    const cx_ = x + pad + th / 2, cy_ = y + pad + th / 2, r = th * 0.22;
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.beginPath(); ctx.arc(cx_, cy_, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = `bold ${Math.round(r)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText("▶", cx_ + r * 0.1, cy_ + r * 0.38);
+
+    // Filename to the right
+    ctx.fillStyle = "#bbb"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+    ctx.save(); ctx.beginPath(); ctx.rect(x + pad + th + 5, y, w - th - pad*2 - 5, h); ctx.clip();
+    ctx.fillText(videoVal.filename, x + pad + th + 6, y + h/2 + 4); ctx.restore();
+
+    // Edit hint
+    ctx.fillStyle = "#2a2a4a"; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
+    ctx.fillText("✎", x + w - 4, y + h - 4);
+  }
+
   // ── Boolean cell: checkbox rendering ────────────────────────────────────
 
   _drawBoolCell(ctx, x, y, w, h, val) {
@@ -1624,6 +1895,10 @@ class DataManagerWidget {
           });
         } else if (cell.col.type === "audio") {
           openAudioPicker(curVal, newVal => {
+            this.setCellValue(cell.rowIdx, cell.colId, newVal);
+          });
+        } else if (cell.col.type === "video") {
+          openVideoPicker(curVal, newVal => {
             this.setCellValue(cell.rowIdx, cell.colId, newVal);
           });
         } else if (cell.col.type === "boolean") {

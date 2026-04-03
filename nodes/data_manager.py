@@ -25,7 +25,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 # Supported column types
-COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio"]
+COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio", "video"]
 
 # Built-in template presets
 PRESETS: dict[str, list[dict]] = {
@@ -78,7 +78,7 @@ def _cast_value(value: Any, col_type: str) -> Any:
         if col_type == "select":
             # A select value is just a string (one of the configured options)
             return str(value) if value is not None else None
-        if col_type in ("image", "audio"):
+        if col_type in ("image", "audio", "video"):
             # Both image and audio store a dict {filename, subfolder, type}.
             # Must NOT be cast to string — preserve it as a dict.
             if isinstance(value, dict):

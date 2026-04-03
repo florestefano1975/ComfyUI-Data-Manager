@@ -421,3 +421,33 @@ class ExtractSelectNode:
         if v is None or v == "":
             return (fallback,)
         return (str(v),)
+
+
+class ExtractVideoPathNode:
+    """
+    Extracts a video column.
+    Emits the resolved absolute path as STRING.
+    Connect to VideoHelperSuite or any node that accepts a video file path.
+    """
+    CATEGORY = "Data Manager/Extractors"
+    FUNCTION = "extract"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "row_data":    ("DM_ROW", {}),
+            "column_name": ("STRING", {"default": ""}),
+        }, "optional": {
+            "fallback_path": ("STRING", {"default": ""}),
+        }}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("path",)
+
+    def extract(self, row_data: dict, column_name: str, fallback_path: str = "") -> tuple:
+        raw  = _get_value(row_data, column_name)
+        # Reuse image path resolution — same {filename, subfolder, type} format
+        path = _resolve_image_path(raw)
+        if not path:
+            return (fallback_path,)
+        return (path,)

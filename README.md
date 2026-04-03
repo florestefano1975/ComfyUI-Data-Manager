@@ -54,6 +54,7 @@ The central node with the interactive grid.
 | `image` | purple | Image file — inline thumbnail, picked from ComfyUI input folder |
 | `audio` | pink | Audio file — inline ▶/⏹ player with duration, picked from ComfyUI input folder |
 | `boolean` | teal | True/False checkbox — click to toggle, no dialog |
+| `video` | orange | Video file — inline thumbnail (first frame) with ▶ overlay, picked from ComfyUI input folder |
 | `select` | yellow | Enum dropdown — options defined at column creation, click to pick |
 
 **Inputs:**
@@ -143,6 +144,18 @@ If the file is missing, emits a silent 1-sample placeholder instead of crashing.
 
 ---
 
+### 🎬 Extract Video
+
+Extracts a video column. Resolves the filename against the ComfyUI `input/` folder
+and emits the absolute path as `STRING`. Connect to VideoHelperSuite or any node
+that accepts a video file path.
+
+```
+row_data + column_name + fallback_path → path (STRING)
+```
+
+---
+
 ### 🔄 Row Iterator
 
 Iterates over all rows of the dataset, one per execution.
@@ -209,6 +222,8 @@ The pack registers the following HTTP endpoints on the ComfyUI server:
 | `GET /api/dm/list_inputs` | Returns all image + audio files in the `input/` folder |
 | `GET /api/dm/list_audio` | Returns only audio files in the `input/` folder |
 | `GET /api/dm/duration?filename=…&subfolder=…` | Returns duration (seconds) of an audio file, read server-side via `mutagen` |
+| `GET /api/dm/list_video` | Returns only video files in the `input/` folder |
+| `GET /api/dm/thumbnail?filename=…&subfolder=…` | Extracts and caches a JPEG thumbnail (first frame) from a video file, using OpenCV or ffmpeg |
 
 These are used internally by the grid widget. A **restart of ComfyUI** is required after installation or update for the routes to be registered.
 
@@ -249,6 +264,7 @@ so it travels with the workflow automatically. A sample payload:
 - Column widths are adjustable by dragging the `↔` handle on the right edge of any column header. The minimum width is 60px. Widths are persisted in the workflow JSON (inside `meta.col_widths`) and restored automatically on reload.
 - `select` columns store their list of options inside the column schema. Options are defined when creating or editing the column and can be updated at any time — existing cell values are preserved.
 - Columns and rows can be reordered by dragging the `⠿` handle — column headers on the left strip, rows on the top half of the index cell.
+- `video` cells use the same `{filename, subfolder, type}` object format as `image` and `audio`. Thumbnails are generated server-side on first access (requires OpenCV `cv2` or `ffmpeg` in PATH) and cached as `<filename>.dm_thumb.jpg` next to the source file.
 - Both `image` and `audio` cells store a `{filename, subfolder, type}` object, resolved against ComfyUI's `input/` folder at execution time.
 - Image thumbnails and audio playback in the grid use the ComfyUI `/view` endpoint — files must be uploaded via the grid picker or the native Load Image node.
 - In `auto` mode the Row Iterator uses `IS_CHANGED` to force re-execution on every queue — always check `is_last` to implement a stop condition.
@@ -265,5 +281,7 @@ so it travels with the workflow automatically. A sample payload:
 - `torch` / `torchaudio` — tensor ops and audio loading (included in ComfyUI)
 - `mutagen` _(optional)_ — fast server-side audio duration reading; falls back to `wave` module if missing
 - `soundfile` _(optional)_ — audio loading fallback if `torchaudio` fails
+- `opencv-python` (`cv2`) _(optional)_ — fast server-side video thumbnail extraction; falls back to `ffmpeg` subprocess if missing
+- `ffmpeg` _(optional, CLI tool)_ — video thumbnail fallback if OpenCV is unavailable
 
 No additional dependencies are required for the `boolean` column type.
