@@ -13,20 +13,94 @@ import { api } from "../../scripts/api.js";
 
 const COLUMN_TYPES = ["string", "int", "float", "boolean", "select", "image", "audio", "video"];
 const TYPE_COLORS  = {
-  string : "#4a9eff",
-  int    : "#ff9f4a",
-  float  : "#4aff9f",
-  image  : "#c44aff",
-  audio  : "#ff4a7a",
-  boolean: "#4affd4",
-  select : "#ffd44a",
-  video  : "#ff7a1a",
+  string : "#6ea8fe",
+  int    : "#f4b860",
+  float  : "#5cc99a",
+  image  : "#c78bff",
+  audio  : "#ff7ea8",
+  boolean: "#55d6c2",
+  select : "#f2d36b",
+  video  : "#ff9b63",
+};
+const TYPE_LABELS = {
+  string : "STR",
+  int    : "INT",
+  float  : "FLT",
+  image  : "IMG",
+  audio  : "AUD",
+  boolean: "BOOL",
+  select : "SEL",
+  video  : "VID",
+};
+const UI = {
+  bg          : "#101218",
+  panel       : "#171a22",
+  panel2      : "#1d222c",
+  panel3      : "#252b36",
+  row         : "#141821",
+  rowAlt      : "#171c25",
+  rowIndex    : "#11151d",
+  stroke      : "#2c3440",
+  strokeSoft  : "#222936",
+  text        : "#e8edf4",
+  muted       : "#9aa5b1",
+  faint       : "#64707d",
+  accent      : "#6ea8fe",
+  success     : "#5cc99a",
+  danger      : "#ff6b6b",
+  warning     : "#f4b860",
+  input       : "#121620",
 };
 const ROW_H     = 52;   // altezza riga — abbastanza per thumbnail
 const HEADER_H  = 32;
 const COL_DEF_W = 140;
 const TOOLBAR_H = 34;
 const PADDING   = 8;
+
+function fillRound(ctx, x, y, w, h, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fill();
+}
+
+function strokeRound(ctx, x, y, w, h, r, color, lineWidth = 1) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.stroke();
+}
+
+function drawTextClipped(ctx, text, x, y, w, h, color, font = "11px sans-serif", align = "left") {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.fillStyle = color;
+  ctx.font = font;
+  ctx.textAlign = align;
+  ctx.fillText(text, x, y + h / 2 + 4);
+  ctx.restore();
+}
+
+function drawPill(ctx, label, x, y, w, h, color) {
+  fillRound(ctx, x, y, w, h, Math.min(5, h / 2), color + "26");
+  ctx.fillStyle = color;
+  ctx.font = "bold 8px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(label, x + w / 2, y + h / 2 + 3);
+}
+
+function buttonCss(variant = "secondary") {
+  const styles = {
+    primary  : `background:${UI.accent};border:1px solid ${UI.accent};color:#07111e;`,
+    secondary: `background:${UI.panel3};border:1px solid ${UI.stroke};color:${UI.text};`,
+    danger   : `background:transparent;border:1px solid #884148;color:#ff8a8a;`,
+  };
+  return `padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px;
+    font-weight:600;line-height:1.2;white-space:nowrap;${styles[variant] ?? styles.secondary}`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utility payload
@@ -341,9 +415,10 @@ async function fetchInputVideo() {
 function createOverlay() {
   const el = document.createElement("div");
   el.style.cssText = `
-    position:fixed; inset:0; background:rgba(0,0,0,.6);
+    position:fixed; inset:0; background:rgba(6,8,12,.68);
     display:flex; align-items:center; justify-content:center;
-    z-index:9999; font-family:sans-serif;
+    z-index:9999; font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    backdrop-filter:blur(3px);
   `;
   return el;
 }
@@ -352,11 +427,11 @@ function inputField(label, value = "", type = "text") {
   const wrap = document.createElement("div");
   wrap.style.cssText = "margin-bottom:12px;";
   wrap.innerHTML = `
-    <label style="display:block;font-size:12px;color:#aaa;margin-bottom:4px;">${label}</label>
+    <label style="display:block;font-size:11px;color:${UI.muted};margin-bottom:5px;font-weight:700;text-transform:uppercase;">${label}</label>
     <input type="${type}" value="${value}" style="
-      width:100%; box-sizing:border-box; padding:7px 10px;
-      border-radius:5px; border:1px solid #555; background:#2a2a3e;
-      color:#eee; font-size:13px;"/>`;
+      width:100%; box-sizing:border-box; padding:8px 10px;
+      border-radius:6px; border:1px solid ${UI.stroke}; background:${UI.input};
+      color:${UI.text}; font-size:13px; outline:none;"/>`;
   return wrap;
 }
 
@@ -366,9 +441,9 @@ function selectField(label, options, selected) {
   const opts = options.map(o =>
     `<option value="${o}" ${o === selected ? "selected" : ""}>${o}</option>`).join("");
   wrap.innerHTML = `
-    <label style="display:block;font-size:12px;color:#aaa;margin-bottom:4px;">${label}</label>
-    <select style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:5px;
-      border:1px solid #555;background:#2a2a3e;color:#eee;font-size:13px;">${opts}</select>`;
+    <label style="display:block;font-size:11px;color:${UI.muted};margin-bottom:5px;font-weight:700;text-transform:uppercase;">${label}</label>
+    <select style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:6px;
+      border:1px solid ${UI.stroke};background:${UI.input};color:${UI.text};font-size:13px;outline:none;">${opts}</select>`;
   return wrap;
 }
 
@@ -376,18 +451,17 @@ function createModal(title, content, buttons) {
   const overlay = createOverlay();
   const box = document.createElement("div");
   box.style.cssText = `
-    background:#1e1e2e; border:1px solid #444; border-radius:10px;
-    padding:22px 26px; min-width:360px; max-width:580px; color:#eee;
-    box-shadow:0 8px 32px rgba(0,0,0,.7); max-height:90vh; overflow-y:auto;`;
-  box.innerHTML = `<h3 style="margin:0 0 14px;font-size:15px;color:#adf;">${title}</h3>`;
+    background:${UI.panel}; border:1px solid ${UI.stroke}; border-radius:8px;
+    padding:20px 22px; min-width:360px; max-width:580px; color:${UI.text};
+    box-shadow:0 18px 50px rgba(0,0,0,.55); max-height:90vh; overflow-y:auto;`;
+  box.innerHTML = `<h3 style="margin:0 0 16px;font-size:15px;color:${UI.text};font-weight:800;">${title}</h3>`;
   box.appendChild(content);
   const btnRow = document.createElement("div");
   btnRow.style.cssText = "display:flex;gap:10px;justify-content:flex-end;margin-top:16px;";
   buttons.forEach(({ label, primary, action }) => {
     const b = document.createElement("button");
     b.textContent = label;
-    b.style.cssText = `padding:7px 18px;border-radius:6px;border:none;cursor:pointer;
-      font-size:13px;font-weight:600;background:${primary?"#4a9eff":"#333"};color:#fff;`;
+    b.style.cssText = buttonCss(primary ? "primary" : "secondary");
     b.onclick = () => action(overlay);
     btnRow.appendChild(b);
   });
@@ -406,8 +480,8 @@ function openImagePicker(currentValue, onConfirm) {
   const overlay = createOverlay();
   const box = document.createElement("div");
   box.style.cssText = `
-    background:#1e1e2e; border:1px solid #444; border-radius:10px;
-    padding:20px 24px; width:600px; max-width:96vw; color:#eee;
+    background:${UI.panel}; border:1px solid ${UI.stroke}; border-radius:8px;
+    padding:20px 24px; width:600px; max-width:96vw; color:${UI.text};
     box-shadow:0 8px 32px rgba(0,0,0,.7);
     max-height:92vh; display:flex; flex-direction:column; gap:12px;`;
 
@@ -418,10 +492,9 @@ function openImagePicker(currentValue, onConfirm) {
   uploadRow.style.cssText = "display:flex;align-items:center;gap:10px;flex-shrink:0;";
   const uploadBtn = document.createElement("button");
   uploadBtn.textContent = "⬆ Upload new file…";
-  uploadBtn.style.cssText = `padding:7px 14px;border-radius:6px;border:1px solid #555;
-    background:#2a2a3e;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;`;
+  uploadBtn.style.cssText = buttonCss("secondary");
   const uploadStatus = document.createElement("span");
-  uploadStatus.style.cssText = "font-size:12px;color:#aaa;";
+  uploadStatus.style.cssText = `font-size:12px;color:${UI.muted};`;
   uploadBtn.onclick = () => {
     const fi = document.createElement("input");
     fi.type = "file"; fi.accept = "image/*";
@@ -455,7 +528,7 @@ function openImagePicker(currentValue, onConfirm) {
   gallery.style.cssText = `
     display:grid; grid-template-columns:repeat(auto-fill,100px);
     gap:8px; overflow-y:auto; flex:1; min-height:180px; max-height:400px;
-    background:#0e0e1a; border-radius:8px; padding:10px; border:1px solid #2a2a3e;`;
+    background:${UI.input}; border-radius:8px; padding:10px; border:1px solid ${UI.strokeSoft};`;
   box.appendChild(gallery);
 
   let selected = normalizeImageValue(currentValue);
@@ -464,17 +537,17 @@ function openImagePicker(currentValue, onConfirm) {
     gallery.querySelectorAll(".dm-gi").forEach(el => {
       const match = selected && el.dataset.fn === selected.filename
                     && el.dataset.sf === (selected.subfolder ?? "");
-      el.style.outline    = match ? "2px solid #4a9eff" : "2px solid transparent";
-      el.style.background = match ? "#1a2e4e" : "#1a1a2e";
+      el.style.outline    = match ? `2px solid ${UI.accent}` : "2px solid transparent";
+      el.style.background = match ? "#17263a" : UI.panel2;
     });
   }
 
   async function loadGallery() {
-    gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:10px;grid-column:1/-1;">⟳ Loading…</div>`;
+    gallery.innerHTML = `<div style="color:${UI.faint};font-size:12px;padding:10px;grid-column:1/-1;">Loading...</div>`;
     const images = await fetchInputImages();
     gallery.innerHTML = "";
     if (!images.length) {
-      gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:10px;grid-column:1/-1;">Input folder is empty.</div>`;
+      gallery.innerHTML = `<div style="color:${UI.faint};font-size:12px;padding:10px;grid-column:1/-1;">Input folder is empty.</div>`;
       return;
     }
     images.forEach(filename => {
@@ -488,7 +561,7 @@ function openImagePicker(currentValue, onConfirm) {
       item.dataset.fn = fname;
       item.dataset.sf = sf;
       item.style.cssText = `cursor:pointer;border-radius:6px;overflow:hidden;
-        outline:2px solid transparent;background:#1a1a2e;
+        outline:2px solid transparent;background:${UI.panel2};
         display:flex;flex-direction:column;align-items:center;
         width:100px;height:100px;flex-shrink:0;`;
 
@@ -498,7 +571,7 @@ function openImagePicker(currentValue, onConfirm) {
       img.onerror = () => {
         img.style.display = "none";
         const ic = document.createElement("div");
-        ic.style.cssText = "width:100px;height:80px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#1a1a2e;flex-shrink:0;";
+        ic.style.cssText = `width:100px;height:80px;display:flex;align-items:center;justify-content:center;font-size:24px;background:${UI.panel2};flex-shrink:0;`;
         ic.textContent = "🖼️";
         item.insertBefore(ic, item.firstChild);
       };
@@ -526,17 +599,17 @@ function openImagePicker(currentValue, onConfirm) {
   btnRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-shrink:0;";
   const clearBtn = document.createElement("button");
   clearBtn.textContent = "🗑 Remove";
-  clearBtn.style.cssText = "padding:6px 12px;border-radius:6px;border:1px solid #8f3333;background:transparent;color:#f66;cursor:pointer;font-size:12px;";
+  clearBtn.style.cssText = buttonCss("danger");
   clearBtn.onclick = () => { selected = null; refreshSelection(); };
   const right = document.createElement("div");
   right.style.cssText = "display:flex;gap:8px;";
   const cancelBtn = document.createElement("button");
   cancelBtn.textContent = "Cancel";
-  cancelBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#333;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  cancelBtn.style.cssText = buttonCss("secondary");
   cancelBtn.onclick = () => overlay.remove();
   const confirmBtn = document.createElement("button");
   confirmBtn.textContent = "✓ Confirm";
-  confirmBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#4a9eff;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  confirmBtn.style.cssText = buttonCss("primary");
   confirmBtn.onclick = () => { onConfirm(selected); overlay.remove(); };
   right.appendChild(cancelBtn);
   right.appendChild(confirmBtn);
@@ -557,8 +630,8 @@ function openAudioPicker(currentValue, onConfirm) {
   const overlay = createOverlay();
   const box = document.createElement("div");
   box.style.cssText = `
-    background:#1e1e2e; border:1px solid #444; border-radius:10px;
-    padding:20px 24px; width:560px; max-width:96vw; color:#eee;
+    background:${UI.panel}; border:1px solid ${UI.stroke}; border-radius:8px;
+    padding:20px 24px; width:560px; max-width:96vw; color:${UI.text};
     box-shadow:0 8px 32px rgba(0,0,0,.7);
     max-height:92vh; display:flex; flex-direction:column; gap:12px;`;
   box.innerHTML = `<h3 style="margin:0;font-size:15px;color:#adf;">🎵 Choose Audio File</h3>`;
@@ -568,10 +641,9 @@ function openAudioPicker(currentValue, onConfirm) {
   uploadRow.style.cssText = "display:flex;align-items:center;gap:10px;flex-shrink:0;";
   const uploadBtn = document.createElement("button");
   uploadBtn.textContent = "⬆ Upload new file…";
-  uploadBtn.style.cssText = `padding:7px 14px;border-radius:6px;border:1px solid #555;
-    background:#2a2a3e;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;`;
+  uploadBtn.style.cssText = buttonCss("secondary");
   const uploadStatus = document.createElement("span");
-  uploadStatus.style.cssText = "font-size:12px;color:#aaa;";
+  uploadStatus.style.cssText = `font-size:12px;color:${UI.muted};`;
   uploadBtn.onclick = () => {
     const fi = document.createElement("input");
     fi.type = "file";
@@ -607,7 +679,7 @@ function openAudioPicker(currentValue, onConfirm) {
   gallery.style.cssText = `
     display:flex; flex-direction:column; gap:4px;
     overflow-y:auto; flex:1; min-height:120px; max-height:360px;
-    background:#0e0e1a; border-radius:8px; padding:8px; border:1px solid #2a2a3e;`;
+    background:${UI.input}; border-radius:8px; padding:8px; border:1px solid ${UI.strokeSoft};`;
   box.appendChild(gallery);
 
   let selected = normalizeAudioValue(currentValue);
@@ -617,16 +689,16 @@ function openAudioPicker(currentValue, onConfirm) {
       const match = selected && el.dataset.fn === selected.filename
                     && el.dataset.sf === (selected.subfolder ?? "");
       el.style.outline    = match ? "2px solid #ff4a7a" : "2px solid transparent";
-      el.style.background = match ? "#2e1a2e" : "#1a1a2e";
+      el.style.background = match ? "#2b1d2a" : UI.panel2;
     });
   }
 
   async function loadGallery() {
-    gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:8px;">⟳ Loading…</div>`;
+    gallery.innerHTML = `<div style="color:${UI.faint};font-size:12px;padding:8px;">Loading...</div>`;
     const files = await fetchInputAudio();
     gallery.innerHTML = "";
     if (!files.length) {
-      gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:8px;">No audio files in the input folder.</div>`;
+      gallery.innerHTML = `<div style="color:${UI.faint};font-size:12px;padding:8px;">No audio files in the input folder.</div>`;
       return;
     }
     files.forEach(filename => {
@@ -641,7 +713,7 @@ function openAudioPicker(currentValue, onConfirm) {
       item.dataset.fn = fname;
       item.dataset.sf = sf;
       item.style.cssText = `cursor:pointer;border-radius:5px;padding:8px 10px;
-        outline:2px solid transparent;background:#1a1a2e;
+        outline:2px solid transparent;background:${UI.panel2};
         display:flex;align-items:center;gap:10px;`;
 
       const icon = document.createElement("div");
@@ -678,13 +750,13 @@ function openAudioPicker(currentValue, onConfirm) {
   btnRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-shrink:0;";
   const clearBtn = document.createElement("button");
   clearBtn.textContent = "🗑 Remove";
-  clearBtn.style.cssText = "padding:6px 12px;border-radius:6px;border:1px solid #8f3333;background:transparent;color:#f66;cursor:pointer;font-size:12px;";
+  clearBtn.style.cssText = buttonCss("danger");
   clearBtn.onclick = () => { selected = null; refreshSelection(); };
   const right = document.createElement("div");
   right.style.cssText = "display:flex;gap:8px;";
   const cancelBtn = document.createElement("button");
   cancelBtn.textContent = "Cancel";
-  cancelBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#333;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  cancelBtn.style.cssText = buttonCss("secondary");
   cancelBtn.onclick = () => overlay.remove();
   const confirmBtn = document.createElement("button");
   confirmBtn.textContent = "✓ Confirm";
@@ -713,8 +785,8 @@ function openVideoPicker(currentValue, onConfirm) {
   const overlay = createOverlay();
   const box = document.createElement("div");
   box.style.cssText = `
-    background:#1e1e2e; border:1px solid #444; border-radius:10px;
-    padding:20px 24px; width:600px; max-width:96vw; color:#eee;
+    background:${UI.panel}; border:1px solid ${UI.stroke}; border-radius:8px;
+    padding:20px 24px; width:600px; max-width:96vw; color:${UI.text};
     box-shadow:0 8px 32px rgba(0,0,0,.7);
     max-height:92vh; display:flex; flex-direction:column; gap:12px;`;
   box.innerHTML = `<h3 style="margin:0;font-size:15px;color:#ff7a1a;">🎬 Choose Video</h3>`;
@@ -724,10 +796,9 @@ function openVideoPicker(currentValue, onConfirm) {
   uploadRow.style.cssText = "display:flex;align-items:center;gap:10px;flex-shrink:0;";
   const uploadBtn = document.createElement("button");
   uploadBtn.textContent = "⬆ Upload new file…";
-  uploadBtn.style.cssText = `padding:7px 14px;border-radius:6px;border:1px solid #555;
-    background:#2a2a3e;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;`;
+  uploadBtn.style.cssText = buttonCss("secondary");
   const uploadStatus = document.createElement("span");
-  uploadStatus.style.cssText = "font-size:12px;color:#aaa;";
+  uploadStatus.style.cssText = `font-size:12px;color:${UI.muted};`;
   uploadBtn.onclick = () => {
     const fi = document.createElement("input");
     fi.type = "file";
@@ -763,7 +834,7 @@ function openVideoPicker(currentValue, onConfirm) {
   gallery.style.cssText = `
     display:grid; grid-template-columns:repeat(auto-fill,120px);
     gap:8px; overflow-y:auto; flex:1; min-height:180px; max-height:400px;
-    background:#0e0e1a; border-radius:8px; padding:10px; border:1px solid #2a2a3e;`;
+    background:${UI.input}; border-radius:8px; padding:10px; border:1px solid ${UI.strokeSoft};`;
   box.appendChild(gallery);
 
   let selected = normalizeVideoValue(currentValue);
@@ -773,16 +844,16 @@ function openVideoPicker(currentValue, onConfirm) {
       const match = selected && el.dataset.fn === selected.filename
                     && el.dataset.sf === (selected.subfolder ?? "");
       el.style.outline    = match ? "2px solid #ff7a1a" : "2px solid transparent";
-      el.style.background = match ? "#2e1a00" : "#1a1a2e";
+      el.style.background = match ? "#2d2117" : UI.panel2;
     });
   }
 
   async function loadGallery() {
-    gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:10px;grid-column:1/-1;">⟳ Loading…</div>`;
+    gallery.innerHTML = `<div style="color:${UI.faint};font-size:12px;padding:10px;grid-column:1/-1;">Loading...</div>`;
     const files = await fetchInputVideo();
     gallery.innerHTML = "";
     if (!files.length) {
-      gallery.innerHTML = `<div style="color:#555;font-size:12px;padding:10px;grid-column:1/-1;">No video files in the input folder.</div>`;
+      gallery.innerHTML = `<div style="color:${UI.faint};font-size:12px;padding:10px;grid-column:1/-1;">No video files in the input folder.</div>`;
       return;
     }
     files.forEach(filename => {
@@ -796,7 +867,7 @@ function openVideoPicker(currentValue, onConfirm) {
       item.dataset.fn = fname;
       item.dataset.sf = sf;
       item.style.cssText = `cursor:pointer;border-radius:6px;overflow:hidden;
-        outline:2px solid transparent;background:#1a1a2e;
+        outline:2px solid transparent;background:${UI.panel2};
         display:flex;flex-direction:column;align-items:center;
         width:120px;flex-shrink:0;`;
 
@@ -807,7 +878,7 @@ function openVideoPicker(currentValue, onConfirm) {
       thumb.onerror = () => {
         thumb.style.display = "none";
         const ic = document.createElement("div");
-        ic.style.cssText = "width:120px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px;background:#1a1a2e;";
+        ic.style.cssText = `width:120px;height:68px;display:flex;align-items:center;justify-content:center;font-size:28px;background:${UI.panel2};`;
         ic.textContent = "🎬";
         item.insertBefore(ic, item.firstChild);
       };
@@ -833,13 +904,13 @@ function openVideoPicker(currentValue, onConfirm) {
   btnRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-shrink:0;";
   const clearBtn = document.createElement("button");
   clearBtn.textContent = "🗑 Remove";
-  clearBtn.style.cssText = "padding:6px 12px;border-radius:6px;border:1px solid #8f3333;background:transparent;color:#f66;cursor:pointer;font-size:12px;";
+  clearBtn.style.cssText = buttonCss("danger");
   clearBtn.onclick = () => { selected = null; refreshSelection(); };
   const right = document.createElement("div");
   right.style.cssText = "display:flex;gap:8px;";
   const cancelBtn = document.createElement("button");
   cancelBtn.textContent = "Cancel";
-  cancelBtn.style.cssText = "padding:7px 16px;border-radius:6px;border:none;background:#333;color:#fff;cursor:pointer;font-size:13px;font-weight:600;";
+  cancelBtn.style.cssText = buttonCss("secondary");
   cancelBtn.onclick = () => overlay.remove();
   const confirmBtn = document.createElement("button");
   confirmBtn.textContent = "✓ Confirm";
@@ -870,8 +941,8 @@ function openSelectPicker(col, currentValue, onConfirm) {
   const overlay = createOverlay();
   const box = document.createElement("div");
   box.style.cssText = `
-    background:#1e1e2e; border:1px solid #444; border-radius:10px;
-    padding:20px 24px; width:340px; max-width:96vw; color:#eee;
+    background:${UI.panel}; border:1px solid ${UI.stroke}; border-radius:8px;
+    padding:20px 24px; width:340px; max-width:96vw; color:${UI.text};
     box-shadow:0 8px 32px rgba(0,0,0,.7);
     max-height:80vh; display:flex; flex-direction:column; gap:10px;`;
 
@@ -889,10 +960,10 @@ function openSelectPicker(col, currentValue, onConfirm) {
   const clearItem = document.createElement("div");
   clearItem.style.cssText = `
     padding:8px 12px; border-radius:5px; cursor:pointer;
-    font-size:12px; color:#555; font-style:italic;
-    border:1px solid #2a2a3e;`;
+    font-size:12px; color:${UI.faint}; font-style:italic;
+    border:1px solid ${UI.strokeSoft};`;
   clearItem.textContent = "— clear selection —";
-  clearItem.onmouseenter = () => clearItem.style.background = "#2a2a3e";
+  clearItem.onmouseenter = () => clearItem.style.background = UI.panel2;
   clearItem.onmouseleave = () => clearItem.style.background = "transparent";
   clearItem.onclick = () => { onConfirm(null); overlay.remove(); };
   list.appendChild(clearItem);
@@ -904,7 +975,7 @@ function openSelectPicker(col, currentValue, onConfirm) {
       padding:9px 12px; border-radius:5px; cursor:pointer;
       font-size:13px; color:${isSelected ? "#ffd44a" : "#ddd"};
       background:${isSelected ? "#2a2200" : "transparent"};
-      border:1px solid ${isSelected ? "#ffd44a44" : "#2a2a3e"};
+      border:1px solid ${isSelected ? "#ffd44a44" : UI.strokeSoft};
       display:flex; align-items:center; gap:8px;`;
 
     const check = document.createElement("span");
@@ -936,7 +1007,7 @@ function openSelectPicker(col, currentValue, onConfirm) {
   cancelBtn.textContent = "Cancel";
   cancelBtn.style.cssText = `
     padding:6px 16px; border-radius:6px; border:none;
-    background:#333; color:#fff; cursor:pointer; font-size:13px; font-weight:600;`;
+    ${buttonCss("secondary")}`;
   cancelBtn.onclick = () => overlay.remove();
   btnRow.appendChild(cancelBtn);
   box.appendChild(btnRow);
@@ -957,13 +1028,13 @@ function openColumnDialog(existingCol, onConfirm) {
   const optionsWrap = document.createElement("div");
   optionsWrap.style.cssText = "margin-bottom:12px;";
   optionsWrap.innerHTML = `
-    <label style="display:block;font-size:12px;color:#aaa;margin-bottom:4px;">
+    <label style="display:block;font-size:11px;color:${UI.muted};margin-bottom:5px;font-weight:700;text-transform:uppercase;">
       Options <span style="color:#666;font-weight:normal;">(one per line)</span>
     </label>
     <textarea rows="5" style="
       width:100%; box-sizing:border-box; padding:7px 10px;
-      border-radius:5px; border:1px solid #555; background:#2a2a3e;
-      color:#eee; font-size:13px; resize:vertical; font-family:sans-serif;
+      border-radius:6px; border:1px solid ${UI.stroke}; background:${UI.input};
+      color:${UI.text}; font-size:13px; resize:vertical; font-family:sans-serif; outline:none;
     ">${(existingCol?.options ?? []).join("\n")}</textarea>`;
 
   function syncOptionsVisibility() {
@@ -1018,11 +1089,11 @@ function openPresetDialog(onConfirm) {
   wrap.style.cssText = "display:flex;flex-direction:column;gap:10px;";
   Object.entries(PRESETS).forEach(([name, cols]) => {
     const btn = document.createElement("button");
-    btn.style.cssText = `padding:10px 16px;border-radius:7px;border:1px solid #555;
-      background:#2a2a3e;color:#eee;cursor:pointer;text-align:left;font-size:13px;`;
-    btn.innerHTML = `<strong>${name}</strong><br><span style="font-size:11px;color:#aaa">${cols.map(c=>c.label).join(" · ")}</span>`;
-    btn.onmouseenter = () => btn.style.background = "#3a3a5e";
-    btn.onmouseleave = () => btn.style.background = "#2a2a3e";
+    btn.style.cssText = `padding:11px 14px;border-radius:7px;border:1px solid ${UI.stroke};
+      background:${UI.panel2};color:${UI.text};cursor:pointer;text-align:left;font-size:13px;`;
+    btn.innerHTML = `<strong>${name}</strong><br><span style="font-size:11px;color:${UI.muted}">${cols.map(c=>c.label).join(" · ")}</span>`;
+    btn.onmouseenter = () => btn.style.background = UI.panel3;
+    btn.onmouseleave = () => btn.style.background = UI.panel2;
     btn.onclick = () => { onConfirm(name, cols); };
     wrap.appendChild(btn);
   });
@@ -1237,10 +1308,8 @@ class DataManagerWidget {
     const w = widgetWidth - PADDING * 2;
 
     // Widget background
-    ctx.fillStyle = "#0e0e1a";
-    ctx.beginPath();
-    ctx.roundRect(x - 2, posY - 2, w + 4, height + 4, 6);
-    ctx.fill();
+    fillRound(ctx, x - 2, posY - 2, w + 4, height + 4, 8, UI.bg);
+    strokeRound(ctx, x - 2, posY - 2, w + 4, height + 4, 8, UI.strokeSoft);
 
     // Toolbar (posY locale = 0, assoluto = posY)
     this._drawToolbar(ctx, x, posY, w);
@@ -1248,7 +1317,9 @@ class DataManagerWidget {
     // Grid
     const gridY = posY + TOOLBAR_H + 6;
     if (!this.schema.length) {
-      ctx.fillStyle = "#444";
+      fillRound(ctx, x, gridY, w, 68, 7, UI.panel);
+      strokeRound(ctx, x, gridY, w, 68, 7, UI.strokeSoft);
+      ctx.fillStyle = UI.muted;
       ctx.font      = "12px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("Nessuna colonna — usa + Col o scegli un Preset", x + w / 2, gridY + 28);
@@ -1259,15 +1330,15 @@ class DataManagerWidget {
   }
 
   _drawToolbar(ctx, x, y, w) {
-    ctx.fillStyle = "#1a1a30";
-    ctx.beginPath(); ctx.roundRect(x, y, w, TOOLBAR_H, 5); ctx.fill();
+    fillRound(ctx, x, y, w, TOOLBAR_H, 7, UI.panel);
+    strokeRound(ctx, x, y, w, TOOLBAR_H, 7, UI.strokeSoft);
 
     const btns = [
-      { label:"+ Col",    color:"#2e6fd4", key:"addCol"    },
-      { label:"+ Row",   color:"#2e8f4a", key:"addRow"    },
-      { label:"📋 Preset", color:"#7a3ea8", key:"preset"    },
-      { label:"⬆ CSV",    color:"#8f6a2e", key:"importCSV" },
-      { label:"⬇ CSV",    color:"#3e8f8a", key:"exportCSV" },
+      { label:"+ Column", color:UI.accent,  key:"addCol"    },
+      { label:"+ Row",    color:UI.success, key:"addRow"    },
+      { label:"Preset",   color:"#c78bff",  key:"preset"    },
+      { label:"Import",   color:UI.warning, key:"importCSV" },
+      { label:"Export",   color:"#55d6c2",  key:"exportCSV" },
     ];
 
     this._areas.toolbar = [];
@@ -1276,17 +1347,18 @@ class DataManagerWidget {
 
     btns.forEach(btn => {
       ctx.font = "bold 11px sans-serif";
-      const tw = ctx.measureText(btn.label).width + 14;
-      ctx.fillStyle = btn.color;
-      ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 4); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.textAlign = "center";
+      const tw = ctx.measureText(btn.label).width + 18;
+      fillRound(ctx, bx, by, tw, bh, 5, btn.color + "24");
+      strokeRound(ctx, bx, by, tw, bh, 5, btn.color + "88");
+      ctx.fillStyle = btn.color; ctx.textAlign = "center";
       ctx.fillText(btn.label, bx + tw / 2, by + bh / 2 + 4);
       this._areas.toolbar.push({ key:btn.key, x:bx, y:by, w:tw, h:bh });
-      bx += tw + 5;
+      bx += tw + 6;
     });
 
-    ctx.fillStyle = "#444"; ctx.font = "italic 10px sans-serif"; ctx.textAlign = "right";
-    ctx.fillText(this.meta.name || "Untitled", x + w - 6, y + TOOLBAR_H / 2 + 4);
+    const summary = `${this.meta.name || "Untitled"}  |  ${this.rows.length} rows  |  ${this.schema.length} cols`;
+    ctx.fillStyle = UI.faint; ctx.font = "10px sans-serif"; ctx.textAlign = "right";
+    ctx.fillText(summary, x + w - 8, y + TOOLBAR_H / 2 + 4);
   }
 
   _drawGrid(ctx, x, y, w) {
@@ -1301,33 +1373,30 @@ class DataManagerWidget {
 
     // ── Header ─────────────────────────────────────────────────────────────
     let cx = x + IDX_W;
-    ctx.fillStyle = "#1e1e38"; ctx.fillRect(x, y, IDX_W, HEADER_H);
-    ctx.fillStyle = "#666"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
+    fillRound(ctx, x, y, IDX_W, HEADER_H, 5, UI.panel2);
+    ctx.fillStyle = UI.faint; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("#", x + IDX_W / 2, y + HEADER_H / 2 + 4);
 
     this.schema.forEach(col => {
       const cw = this.colWidth(col.id);
       const DRAG_W = 14;  // width of the drag handle zone on the left
-      ctx.fillStyle = "#1e1e38"; ctx.fillRect(cx, y, cw, HEADER_H);
-      ctx.fillStyle = TYPE_COLORS[col.type] ?? "#888"; ctx.fillRect(cx, y, cw, 3);
+      const typeColor = TYPE_COLORS[col.type] ?? UI.faint;
+      fillRound(ctx, cx, y, cw, HEADER_H, 4, UI.panel2);
+      ctx.fillStyle = typeColor; ctx.fillRect(cx, y, cw, 3);
       // Drag handle ⠿ — left strip, same style as row handles
-      ctx.fillStyle = "#3a3a5a";
+      ctx.fillStyle = UI.faint;
       ctx.font = "11px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("⠿", cx + DRAG_W / 2, y + HEADER_H / 2 + 4);
       // Column label — starts after drag handle
-      ctx.fillStyle = "#ddd"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
+      ctx.fillStyle = UI.text; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
       ctx.save(); ctx.beginPath(); ctx.rect(cx + DRAG_W + 3, y + 3, cw - DRAG_W - 52, HEADER_H - 3); ctx.clip();
       ctx.fillText(col.label, cx + DRAG_W + 3, y + HEADER_H / 2 + 4); ctx.restore();
       // Type badge — shifted left to make room for resize handle (RESIZE_W = 8px)
       const RW = 8;  // same as RESIZE_W above
-      ctx.fillStyle = (TYPE_COLORS[col.type] ?? "#888") + "44";
-      ctx.beginPath(); ctx.roundRect(cx + cw - 48 - RW, y + 9, 23, 13, 3); ctx.fill();
-      ctx.fillStyle = "#ddd"; ctx.font = "8px monospace"; ctx.textAlign = "center";
-      ctx.fillText(col.type.slice(0,3), cx + cw - 36 - RW, y + 19);
+      drawPill(ctx, TYPE_LABELS[col.type] ?? col.type.slice(0,3).toUpperCase(), cx + cw - 50 - RW, y + 9, 26, 13, typeColor);
       // × button to delete column — shifted left by RW
-      ctx.fillStyle = "#6e1818";
-      ctx.beginPath(); ctx.roundRect(cx + cw - 20 - RW, y + 8, 14, HEADER_H - 16, 3); ctx.fill();
-      ctx.fillStyle = "#faa"; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "center";
+      fillRound(ctx, cx + cw - 20 - RW, y + 8, 14, HEADER_H - 16, 3, "#3a1e24");
+      ctx.fillStyle = "#ff9aa2"; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("×", cx + cw - 13 - RW, y + HEADER_H / 2 + 3);
       // Resize handle — 6px strip on right edge of header, highlighted
       // Layout (left → right): ⠿ drag | label | type badge | × delete | ↔ resize
@@ -1341,14 +1410,14 @@ class DataManagerWidget {
       const rHandleY = y + BAND_H + 2;
       const rHandleH = HEADER_H - BAND_H - 4;
       const isResizing = this._drag?.type === "resize" && this._drag?.colId === col.id;
-      ctx.fillStyle = isResizing ? "#4a9eff" : "#2e2e50";
+      ctx.fillStyle = isResizing ? UI.accent : UI.panel3;
       ctx.beginPath(); ctx.roundRect(rHandleX + 1, rHandleY, RESIZE_W - 2, rHandleH, 2); ctx.fill();
-      ctx.fillStyle = isResizing ? "#fff" : "#666";
+      ctx.fillStyle = isResizing ? "#fff" : UI.faint;
       ctx.font = "7px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("↔", rHandleX + RESIZE_W / 2, rHandleY + rHandleH / 2 + 3);
 
       // Divider line (column boundary)
-      ctx.strokeStyle = "#2a2a42"; ctx.lineWidth = 1;
+      ctx.strokeStyle = UI.strokeSoft; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx+cw, y); ctx.lineTo(cx+cw, y + HEADER_H + this.rows.length * ROW_H); ctx.stroke();
 
       // Hit areas
@@ -1359,25 +1428,25 @@ class DataManagerWidget {
     });
 
     // Line below header
-    ctx.strokeStyle = "#3a3a5a"; ctx.lineWidth = 1;
+    ctx.strokeStyle = UI.stroke; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x, y + HEADER_H); ctx.lineTo(cx + 26, y + HEADER_H); ctx.stroke();
 
     // ── Righe dati ─────────────────────────────────────────────────────────
     this.rows.forEach((row, ri) => {
       const ry = y + HEADER_H + ri * ROW_H;
-      ctx.fillStyle = ri % 2 === 0 ? "#131320" : "#171728";
+      ctx.fillStyle = ri % 2 === 0 ? UI.row : UI.rowAlt;
       ctx.fillRect(x, ry, cx - x + 26, ROW_H);
 
       // Row index cell background
-      ctx.fillStyle = ri % 2 === 0 ? "#0e0e1c" : "#12121f";
+      ctx.fillStyle = UI.rowIndex;
       ctx.fillRect(x, ry, IDX_W, ROW_H);
 
       // Drag handle (top half) + row number (bottom half)
       const handleH = Math.floor(ROW_H / 2);
-      ctx.fillStyle = "#3a3a5a";
+      ctx.fillStyle = UI.faint;
       ctx.font = "10px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("⠿", x + IDX_W / 2, ry + handleH / 2 + 4);
-      ctx.fillStyle = "#555"; ctx.font = "9px monospace";
+      ctx.fillStyle = UI.muted; ctx.font = "9px monospace";
       ctx.fillText(ri + 1, x + IDX_W / 2, ry + handleH + handleH / 2 + 3);
 
       // Register row handle hit area (top half of index cell)
@@ -1400,13 +1469,13 @@ class DataManagerWidget {
           this._drawSelectCell(ctx, cellX, ry, cw, ROW_H, val, col.options ?? []);
         } else {
           const txt = val != null ? String(val) : "";
-          ctx.fillStyle = txt ? "#ccc" : "#383858";
+          ctx.fillStyle = txt ? UI.text : UI.faint;
           ctx.font = "11px sans-serif"; ctx.textAlign = "left";
-          ctx.save(); ctx.beginPath(); ctx.rect(cellX+4, ry+1, cw-8, ROW_H-2); ctx.clip();
-          ctx.fillText(txt || "—", cellX + 4, ry + ROW_H / 2 + 4); ctx.restore();
+          ctx.save(); ctx.beginPath(); ctx.rect(cellX+8, ry+1, cw-14, ROW_H-2); ctx.clip();
+          ctx.fillText(txt || "-", cellX + 8, ry + ROW_H / 2 + 4); ctx.restore();
         }
 
-        ctx.strokeStyle = "#1e1e38"; ctx.lineWidth = 0.5;
+        ctx.strokeStyle = UI.strokeSoft; ctx.lineWidth = 0.5;
         ctx.strokeRect(cellX, ry, cw, ROW_H);
         this._areas.cells.push({ rowIdx:ri, colId:col.id, col, x:cellX, y:ry, w:cw, h:ROW_H });
         cellX += cw;
@@ -1420,21 +1489,19 @@ class DataManagerWidget {
       const delBy  = dupBy + btnH + gap;
 
       // ⧉ duplicate
-      ctx.fillStyle = "#1e3a2e";
-      ctx.beginPath(); ctx.roundRect(btnX, dupBy, 18, btnH, 3); ctx.fill();
-      ctx.fillStyle = "#4affd4"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
+      fillRound(ctx, btnX, dupBy, 18, btnH, 4, "#173328");
+      ctx.fillStyle = UI.success; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("⧉", btnX + 9, dupBy + btnH / 2 + 4);
       this._areas.dupBtns.push({ rowIdx:ri, x:btnX, y:dupBy, w:18, h:btnH });
 
       // × delete
-      ctx.fillStyle = "#6e1818";
-      ctx.beginPath(); ctx.roundRect(btnX, delBy, 18, btnH, 3); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
+      fillRound(ctx, btnX, delBy, 18, btnH, 4, "#3a1e24");
+      ctx.fillStyle = "#ffb3b3"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("×", btnX + 9, delBy + btnH / 2 + 4);
       this._areas.delBtns.push({ rowIdx:ri, x:btnX, y:delBy, w:18, h:btnH });
     });
 
-    ctx.strokeStyle = "#3a3a5a"; ctx.lineWidth = 1;
+    ctx.strokeStyle = UI.stroke; ctx.lineWidth = 1;
     ctx.strokeRect(x, y, cx - x + 26, HEADER_H + this.rows.length * ROW_H);
 
     // ── Drag indicator ───────────────────────────────────────────────────────
@@ -1452,7 +1519,7 @@ class DataManagerWidget {
           colX += cw;
         }
         d.targetIdx = target;
-        ctx.strokeStyle = "#4a9eff";
+        ctx.strokeStyle = UI.accent;
         ctx.lineWidth   = 3;
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
@@ -1502,11 +1569,11 @@ class DataManagerWidget {
 
     if (!imgVal) {
       // Empty slot: centered icon
-      ctx.fillStyle = "#1a1a2e";
+      ctx.fillStyle = UI.input;
       ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
       ctx.font = "18px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("＋", x + w / 2, y + h / 2 + 6);
-      ctx.fillStyle = "#383858"; ctx.font = "8px sans-serif";
+      ctx.fillStyle = UI.faint; ctx.font = "8px sans-serif";
       ctx.fillText("image", x + w / 2, y + h - 5);
       return;
     }
@@ -1524,15 +1591,15 @@ class DataManagerWidget {
     const cached = this._imgCache[url];
 
     if (cached === "loading") {
-      ctx.fillStyle = "#1a1a2e"; ctx.fillRect(x+1, y+1, w-2, h-2);
-      ctx.fillStyle = "#555"; ctx.font = "14px sans-serif"; ctx.textAlign = "center";
+      ctx.fillStyle = UI.input; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = UI.faint; ctx.font = "14px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("⟳", x + w / 2, y + h / 2 + 5);
       return;
     }
 
     if (cached === "error") {
-      ctx.fillStyle = "#2a1010"; ctx.fillRect(x+1, y+1, w-2, h-2);
-      ctx.fillStyle = "#f55"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+      ctx.fillStyle = "#2a1418"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = UI.danger; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("✗ " + imgVal.filename, x + w / 2, y + h / 2 + 4);
       return;
     }
@@ -1563,12 +1630,12 @@ class DataManagerWidget {
     ctx.restore();
 
     // Filename to the right of the thumbnail
-    ctx.fillStyle = "#bbb"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+    ctx.fillStyle = UI.muted; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
     ctx.save(); ctx.beginPath(); ctx.rect(x + pad + th + 5, y, w - th - pad*2 - 5, h); ctx.clip();
     ctx.fillText(imgVal.filename, x + pad + th + 6, y + h / 2 + 4); ctx.restore();
 
     // Indicatore "click per cambiare"
-    ctx.fillStyle = "#2a2a4a"; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
+    ctx.fillStyle = UI.faint; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
     ctx.fillText("✎", x + w - 4, y + h - 4);
   }
 
@@ -1580,10 +1647,10 @@ class DataManagerWidget {
     const btnSize = 28;   // fixed small square button — leaves room for duration
 
     if (!audioVal) {
-      ctx.fillStyle = "#1a1a2e"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = UI.input; ctx.fillRect(x+1, y+1, w-2, h-2);
       ctx.font = "18px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("🎵", x + w/2, y + h/2 + 6);
-      ctx.fillStyle = "#383858"; ctx.font = "8px sans-serif";
+      ctx.fillStyle = UI.faint; ctx.font = "8px sans-serif";
       ctx.fillText("audio", x + w/2, y + h - 5);
       return;
     }
@@ -1592,13 +1659,13 @@ class DataManagerWidget {
     const playing = audioIsPlaying(url);
 
     // Background
-    ctx.fillStyle = playing ? "#1a0e2e" : "#111120";
+    ctx.fillStyle = playing ? "#231626" : UI.input;
     ctx.fillRect(x+1, y+1, w-2, h-2);
 
     // Play/Stop button — vertically centered, fixed size
     const bx = x + pad;
     const by = y + (h - btnSize) / 2;
-    ctx.fillStyle = playing ? "#ff4a7a" : "#3a2a4e";
+    ctx.fillStyle = playing ? TYPE_COLORS.audio : "#302437";
     ctx.beginPath(); ctx.roundRect(bx, by, btnSize, btnSize, 5); ctx.fill();
 
     // Button icon
@@ -1614,7 +1681,7 @@ class DataManagerWidget {
       loadAudioDuration(url, () => this.node.graph?.setDirtyCanvas(true));
     }
     const dur = _durationCache[url] ?? "--:--";
-    ctx.fillStyle = playing ? "#ff8aaa" : "#aaa";
+    ctx.fillStyle = playing ? "#ff9fbd" : UI.muted;
     ctx.font = "11px monospace";
     ctx.textAlign = "left";
     ctx.fillText(dur, bx + btnSize + 8, y + h / 2 + 4);
@@ -1632,10 +1699,10 @@ class DataManagerWidget {
     const th       = h - pad * 2;   // thumbnail square
 
     if (!videoVal) {
-      ctx.fillStyle = "#1a1a1e"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = UI.input; ctx.fillRect(x+1, y+1, w-2, h-2);
       ctx.font = "18px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("🎬", x + w/2, y + h/2 + 6);
-      ctx.fillStyle = "#383838"; ctx.font = "8px sans-serif";
+      ctx.fillStyle = UI.faint; ctx.font = "8px sans-serif";
       ctx.fillText("video", x + w/2, y + h - 5);
       return;
     }
@@ -1654,18 +1721,18 @@ class DataManagerWidget {
     const cached = this._imgCache[thumbUrl];
 
     if (cached === "loading") {
-      ctx.fillStyle = "#1a1a2e"; ctx.fillRect(x+1, y+1, w-2, h-2);
-      ctx.fillStyle = "#555"; ctx.font = "14px sans-serif"; ctx.textAlign = "center";
+      ctx.fillStyle = UI.input; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = UI.faint; ctx.font = "14px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("⟳", x + w/2, y + h/2 + 5);
       return;
     }
 
     if (cached === "error") {
       // No thumbnail available — show icon + filename
-      ctx.fillStyle = "#1a1010"; ctx.fillRect(x+1, y+1, w-2, h-2);
+      ctx.fillStyle = "#2a1712"; ctx.fillRect(x+1, y+1, w-2, h-2);
       ctx.font = "18px sans-serif"; ctx.textAlign = "center";
       ctx.fillText("🎬", x + pad + th/2, y + h/2 + 6);
-      ctx.fillStyle = "#aaa"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+      ctx.fillStyle = UI.muted; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
       ctx.save(); ctx.beginPath(); ctx.rect(x + pad + th + 5, y, w - th - pad*2 - 5, h); ctx.clip();
       ctx.fillText(videoVal.filename, x + pad + th + 6, y + h/2 + 4); ctx.restore();
       return;
@@ -1694,12 +1761,12 @@ class DataManagerWidget {
     ctx.fillText("▶", cx_ + r * 0.1, cy_ + r * 0.38);
 
     // Filename to the right
-    ctx.fillStyle = "#bbb"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+    ctx.fillStyle = UI.muted; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
     ctx.save(); ctx.beginPath(); ctx.rect(x + pad + th + 5, y, w - th - pad*2 - 5, h); ctx.clip();
     ctx.fillText(videoVal.filename, x + pad + th + 6, y + h/2 + 4); ctx.restore();
 
     // Edit hint
-    ctx.fillStyle = "#2a2a4a"; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
+    ctx.fillStyle = UI.faint; ctx.font = "8px sans-serif"; ctx.textAlign = "right";
     ctx.fillText("✎", x + w - 4, y + h - 4);
   }
 
@@ -1712,17 +1779,17 @@ class DataManagerWidget {
     const by      = y + (h - size) / 2;
 
     // Cell background
-    ctx.fillStyle = checked ? "#0e2a1e" : "#111120";
+    ctx.fillStyle = checked ? "#102720" : UI.input;
     ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
 
     // Checkbox border
-    ctx.strokeStyle = checked ? "#4affd4" : "#3a3a5a";
+    ctx.strokeStyle = checked ? TYPE_COLORS.boolean : UI.stroke;
     ctx.lineWidth   = 2;
     ctx.beginPath(); ctx.roundRect(bx, by, size, size, 4); ctx.stroke();
 
     // Checkmark
     if (checked) {
-      ctx.strokeStyle = "#4affd4";
+      ctx.strokeStyle = TYPE_COLORS.boolean;
       ctx.lineWidth   = 2.5;
       ctx.lineCap     = "round";
       ctx.lineJoin    = "round";
@@ -1741,11 +1808,11 @@ class DataManagerWidget {
     const pad    = 6;
 
     // Background
-    ctx.fillStyle = hasVal ? "#1a1a10" : "#111120";
+    ctx.fillStyle = hasVal ? "#24220f" : UI.input;
     ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
 
     // Selected value text
-    ctx.fillStyle = hasVal ? "#ffd44a" : "#3a3a30";
+    ctx.fillStyle = hasVal ? TYPE_COLORS.select : UI.faint;
     ctx.font      = "11px sans-serif";
     ctx.textAlign = "left";
     ctx.save();
@@ -1756,7 +1823,7 @@ class DataManagerWidget {
     ctx.restore();
 
     // Dropdown arrow
-    ctx.fillStyle = "#ffd44a";
+    ctx.fillStyle = TYPE_COLORS.select;
     ctx.font      = "9px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("▾", x + w - 10, y + h / 2 + 3);
@@ -1945,9 +2012,9 @@ class DataManagerWidget {
     const col = this.schema.find(c => c.id === colId); if (!col) return;
     const menu = document.createElement("div");
     menu.id = "dm-col-menu";
-    menu.style.cssText = `position:fixed;background:#1e1e2e;border:1px solid #444;
+    menu.style.cssText = `position:fixed;background:${UI.panel};border:1px solid ${UI.stroke};
       border-radius:7px;padding:4px 0;z-index:9998;min-width:160px;
-      box-shadow:0 4px 16px rgba(0,0,0,.5);font-family:sans-serif;`;
+      box-shadow:0 12px 28px rgba(0,0,0,.45);font-family:sans-serif;`;
     const ds   = this.node.graph.canvas.ds;
     const rect = this.node.graph.canvas.canvas.getBoundingClientRect();
     menu.style.left = ((this.node.pos[0]+mx)*ds.scale+ds.offset[0]+rect.left)+"px";
@@ -1958,8 +2025,8 @@ class DataManagerWidget {
     ].forEach(item => {
       const el = document.createElement("div");
       el.textContent = item.label;
-      el.style.cssText = "padding:8px 16px;cursor:pointer;font-size:12px;color:#ddd;";
-      el.onmouseenter = ()=> el.style.background="#2e2e4e";
+      el.style.cssText = `padding:8px 16px;cursor:pointer;font-size:12px;color:${UI.text};`;
+      el.onmouseenter = ()=> el.style.background=UI.panel3;
       el.onmouseleave = ()=> el.style.background="transparent";
       el.onclick = ()=> { item.action(); menu.remove(); };
       menu.appendChild(el);
